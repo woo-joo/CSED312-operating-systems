@@ -285,7 +285,7 @@ main (int argc __attribute__ ((unused)), char *argv[])
 
   /* System V implementations need STREAMS configuration for the
      slave. */
-/*  if (isastream (slave))
+  /*if (isastream (slave))
     {
       if (ioctl (slave, I_PUSH, "ptem") < 0
           || ioctl (slave, I_PUSH, "ldterm") < 0)
