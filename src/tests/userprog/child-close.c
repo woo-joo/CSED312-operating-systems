@@ -13,16 +13,15 @@
 #include <syscall.h>
 #include "tests/lib.h"
 
-int
-main (int argc UNUSED, char *argv[]) 
+int main(int argc UNUSED, char *argv[])
 {
-  test_name = "child-close";
+    test_name = "child-close";
 
-  msg ("begin");
-  if (!isdigit (*argv[1]))
-    fail ("bad command-line arguments");
-  close (atoi (argv[1]));
-  msg ("end");
+    msg("begin");
+    if (!isdigit(*argv[1]))
+        fail("bad command-line arguments");
+    close(atoi(argv[1]));
+    msg("end");
 
-  return 0;
+    return 0;
 }
