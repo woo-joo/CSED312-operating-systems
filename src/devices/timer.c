@@ -37,7 +37,8 @@ static void real_time_delay(int64_t num, int32_t denom);
 static list_less_func less_wake_ticks;
 
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
-   and registers the corresponding interrupt. */
+   registers the corresponding interrupt, and initializes the
+   sleep list. */
 void timer_init(void)
 {
     pit_configure_channel(0, 2, TIMER_FREQ);
@@ -89,8 +90,9 @@ timer_elapsed(int64_t then)
     return timer_ticks() - then;
 }
 
-/* Sleeps for approximately TICKS timer ticks.  Interrupts must
-   be turned on. */
+/* Sleeps for approximately TICKS timer ticks. The current
+   thread is put to sleep and wakes up later in
+   timer_interrupt(). Interrupts must be turned on. */
 void timer_sleep(int64_t ticks)
 {
     int64_t start = timer_ticks();
@@ -167,7 +169,8 @@ void timer_print_stats(void)
     printf("Timer: %" PRId64 " ticks\n", timer_ticks());
 }
 
-/* Timer interrupt handler. */
+/* Timer interrupt handler. Checks whether there is
+   any thread that can wake up in sleep list. */
 static void
 timer_interrupt(struct intr_frame *args UNUSED)
 {
