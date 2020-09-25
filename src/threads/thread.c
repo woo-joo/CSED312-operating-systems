@@ -24,6 +24,10 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* List of slept processes in THREAD_BLOCKED state, that is,
+   processes that are slept by timer_sleep(). */
+static struct list sleep_list;
+
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
@@ -357,6 +361,12 @@ int thread_get_recent_cpu(void)
 {
     /* Not yet implemented. */
     return 0;
+}
+
+/* Returns sleep list */
+struct list *get_sleep_list(void)
+{
+    return &sleep_list;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
