@@ -98,6 +98,9 @@ struct thread
     uint32_t *pagedir; /* Page directory. */
 #endif
 
+    /* Owned by devices/timer.c. */
+    int64_t wake_ticks; /* Ticks to wake up. */
+
     /* Owned by thread.c. */
     unsigned magic; /* Detects stack overflow. */
 };
@@ -137,5 +140,7 @@ int thread_get_nice(void);
 void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
+
+struct list *get_sleep_list(void);
 
 #endif /* threads/thread.h */
