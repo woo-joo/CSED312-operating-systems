@@ -58,7 +58,7 @@ static long long user_ticks;   /* # of timer ticks in user programs. */
 #define TIME_SLICE 4          /* # of timer ticks to give each thread. */
 static unsigned thread_ticks; /* # of timer ticks since last yield. */
 
-/* If false (default), use round-robin scheduler.
+/* If false (default), use priority scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
@@ -220,7 +220,8 @@ void thread_block(void)
 
 /* Transitions a blocked thread T to the ready-to-run state.
    This is an error if T is not blocked.  (Use thread_yield() to
-   make the running thread ready.)
+   make the running thread ready.) If the current thread has
+   lower priority than T, it should yield.
 
    This function does not preempt the running thread.  This can
    be important: if the caller had disabled interrupts itself,
@@ -237,6 +238,10 @@ void thread_unblock(struct thread *t)
     list_push_back(&ready_list, &t->elem);
     t->status = THREAD_READY;
     intr_set_level(old_level);
+
+    struct thread *cur = thread_current();
+    if (cur != idle_thread && t->priority > cur->priority)
+        thread_yield();
 }
 
 /* Returns the name of the running thread. */
@@ -369,6 +374,16 @@ struct list *get_sleep_list(void)
     return &sleep_list;
 }
 
+/* Compares priority of two list elements A and B.
+   Returns true if A is less than B, or false if A is
+   greater than or equal to B. */
+bool less_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+    const struct thread *a_t = list_entry(a, struct thread, elem);
+    const struct thread *b_t = list_entry(b, struct thread, elem);
+    return a_t->priority < b_t->priority;
+}
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -483,14 +498,21 @@ alloc_frame(struct thread *t, size_t size)
    return a thread from the run queue, unless the run queue is
    empty.  (If the running thread can continue running, then it
    will be in the run queue.)  If the run queue is empty, return
-   idle_thread. */
+   idle_thread. Picks one thread with the highest priority when
+   choosing the next one. */
 static struct thread *
 next_thread_to_run(void)
 {
     if (list_empty(&ready_list))
         return idle_thread;
     else
-        return list_entry(list_pop_front(&ready_list), struct thread, elem);
+    {
+        struct list_elem *max_e = list_max(&ready_list, less_priority, NULL);
+        struct thread *max_t = list_entry(max_e, struct thread, elem);
+
+        list_remove(max_e);
+        return max_t;
+    }
 }
 
 /* Completes a thread switch by activating the new thread's page

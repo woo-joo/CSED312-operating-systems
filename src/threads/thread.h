@@ -143,4 +143,6 @@ int thread_get_load_avg(void);
 
 struct list *get_sleep_list(void);
 
+list_less_func less_priority;
+
 #endif /* threads/thread.h */
