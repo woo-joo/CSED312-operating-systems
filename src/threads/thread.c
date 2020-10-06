@@ -329,16 +329,35 @@ void thread_foreach(thread_action_func *func, void *aux)
     }
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* Sets the current thread's priority to NEW_PRIORITY.
+   If there is any thread with higher priority than the
+   current thread, the current thread should yield. */
 void thread_set_priority(int new_priority)
 {
-    thread_current()->priority = new_priority;
+    struct thread *cur = thread_current();
+
+    cur->priority = new_priority;
+    if (!list_empty(&ready_list))
+    {
+        struct list_elem *max_e = list_max(&ready_list, less_priority, NULL);
+
+        if (cur->priority < list_entry(max_e, struct thread, elem)->priority)
+            thread_yield();
+    }
 }
 
-/* Returns the current thread's priority. */
+/* If the current thread has no donators, return its
+   original priority. Otherwise, return the highest
+   priority among donators. */
 int thread_get_priority(void)
 {
-    return thread_current()->priority;
+    struct thread *cur = thread_current();
+
+    if (list_empty(&cur->donators))
+        return cur->original_priority;
+
+    struct list_elem *max_e = list_max(&cur->donators, less_priority, 1);
+    return list_entry(max_e, struct thread, doelem)->priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -374,13 +393,16 @@ struct list *get_sleep_list(void)
     return &sleep_list;
 }
 
-/* Compares priority of two list elements A and B.
+/* Compares priority of two list elements A and B. If
+   aux is 1, A and B are elements of donators list.
    Returns true if A is less than B, or false if A is
    greater than or equal to B. */
-bool less_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+bool less_priority(const struct list_elem *a, const struct list_elem *b, void *aux)
 {
-    const struct thread *a_t = list_entry(a, struct thread, elem);
-    const struct thread *b_t = list_entry(b, struct thread, elem);
+    const struct thread *a_t = (aux == 1) ? list_entry(a, struct thread, doelem)
+                                          : list_entry(a, struct thread, elem);
+    const struct thread *b_t = (aux == 1) ? list_entry(b, struct thread, doelem)
+                                          : list_entry(b, struct thread, elem);
     return a_t->priority < b_t->priority;
 }
 
@@ -473,7 +495,8 @@ init_thread(struct thread *t, const char *name, int priority)
     t->status = THREAD_BLOCKED;
     strlcpy(t->name, name, sizeof t->name);
     t->stack = (uint8_t *)t + PGSIZE;
-    t->priority = priority;
+    t->priority = t->original_priority = priority;
+    list_init(&t->donators);
     t->magic = THREAD_MAGIC;
 
     old_level = intr_disable();

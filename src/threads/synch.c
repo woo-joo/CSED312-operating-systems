@@ -181,9 +181,10 @@ void lock_init(struct lock *lock)
     sema_init(&lock->semaphore, 1);
 }
 
-/* Acquires LOCK, sleeping until it becomes available if
-   necessary.  The lock must not already be held by the current
-   thread.
+/* If the holder of LOCK has lower priority than the current
+   thread, it should be donated priority. Then, acquire LOCK,
+   sleeping until it becomes available if necessary. The lock
+   must not already be held by the current thread.
 
    This function may sleep, so it must not be called within an
    interrupt handler.  This function may be called with
@@ -194,6 +195,14 @@ void lock_acquire(struct lock *lock)
     ASSERT(lock != NULL);
     ASSERT(!intr_context());
     ASSERT(!lock_held_by_current_thread(lock));
+
+    struct thread *cur = thread_current();
+
+    if (lock->holder != NULL && lock->holder->priority < cur->priority)
+    {
+        lock->holder->priority = cur->priority;
+        list_push_back(&lock->holder->donators, &cur->doelem);
+    }
 
     sema_down(&lock->semaphore);
     lock->holder = thread_current();
@@ -218,7 +227,10 @@ bool lock_try_acquire(struct lock *lock)
     return success;
 }
 
-/* Releases LOCK, which must be owned by the current thread.
+/* Delete all donators of the current thread, which are waiting
+   for LOCK. Then, release LOCK, which must be owned by the
+   current thread. Lastly, set the current thread's priority
+   properly.
 
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
@@ -228,8 +240,22 @@ void lock_release(struct lock *lock)
     ASSERT(lock != NULL);
     ASSERT(lock_held_by_current_thread(lock));
 
+    struct list *waiters = &lock->semaphore.waiters,
+                *donators = &thread_current()->donators;
+    struct list_elem *e, *de;
+
+    for (e = list_begin(waiters); e != list_end(waiters); e = list_next(e))
+        for (de = list_begin(donators); de != list_end(donators); de = list_next(de))
+            if (&list_entry(e, struct thread, elem)->doelem == de)
+            {
+                list_remove(de);
+                break;
+            }
+
     lock->holder = NULL;
     sema_up(&lock->semaphore);
+
+    thread_set_priority(thread_get_priority());
 }
 
 /* Returns true if the current thread holds LOCK, false

@@ -101,6 +101,11 @@ struct thread
     /* Owned by devices/timer.c. */
     int64_t wake_ticks; /* Ticks to wake up. */
 
+    /* Shared between thread.c and synch.c. */
+    int original_priority;   /* Original priority before donation. */
+    struct list donators;    /* List of donators. */
+    struct list_elem doelem; /* List element for donators list. */
+
     /* Owned by thread.c. */
     unsigned magic; /* Detects stack overflow. */
 };
