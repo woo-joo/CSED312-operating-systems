@@ -330,11 +330,25 @@ void thread_foreach(thread_action_func *func, void *aux)
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY.
-   If there is any thread with higher priority than the
-   current thread, the current thread should yield. */
+   If there is donators of the current thread and
+   NEW_PRIORITY is lower than the most powerful donator,
+   set the original priority of it instead. If there is
+   any thread with higher priority than the current
+   thread, the current thread should yield. */
 void thread_set_priority(int new_priority)
 {
     struct thread *cur = thread_current();
+
+    if (!list_empty(&cur->donators))
+    {
+        struct list_elem *max_e = list_max(&cur->donators, less_priority, 1);
+
+        if (new_priority < list_entry(max_e, struct thread, doelem)->priority)
+        {
+            cur->original_priority = new_priority;
+            return;
+        }
+    }
 
     cur->priority = new_priority;
     if (!list_empty(&ready_list))
