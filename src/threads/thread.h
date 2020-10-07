@@ -105,6 +105,7 @@ struct thread
     int original_priority;   /* Original priority before donation. */
     struct list donators;    /* List of donators. */
     struct list_elem doelem; /* List element for donators list. */
+    struct thread *donee;    /* Thread that is given priority. */
 
     /* Owned by thread.c. */
     unsigned magic; /* Detects stack overflow. */

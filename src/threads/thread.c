@@ -330,10 +330,11 @@ void thread_foreach(thread_action_func *func, void *aux)
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY.
-   If there is donators of the current thread and
-   NEW_PRIORITY is lower than the most powerful donator,
-   set the original priority of it instead. If there is
-   any thread with higher priority than the current
+   If it is not related to donation, set the original
+   priority, too. If there is donators of the current
+   thread and NEW_PRIORITY is lower than the most
+   powerful donator, just return. If there is any
+   thread with higher priority than the current
    thread, the current thread should yield. */
 void thread_set_priority(int new_priority)
 {
@@ -513,6 +514,7 @@ init_thread(struct thread *t, const char *name, int priority)
     t->stack = (uint8_t *)t + PGSIZE;
     t->priority = t->original_priority = priority;
     list_init(&t->donators);
+    t->donee = NULL;
     t->magic = THREAD_MAGIC;
 
     old_level = intr_disable();

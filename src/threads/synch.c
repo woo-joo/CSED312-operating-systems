@@ -182,9 +182,10 @@ void lock_init(struct lock *lock)
 }
 
 /* If the holder of LOCK has lower priority than the current
-   thread, it should be donated priority. Then, acquire LOCK,
-   sleeping until it becomes available if necessary. The lock
-   must not already be held by the current thread.
+   thread, it, its donee, its donee's donee, and so on should
+   be donated priority. Then, acquire LOCK, sleeping until it
+   becomes available if necessary. The lock must not already
+   be held by the current thread.
 
    This function may sleep, so it must not be called within an
    interrupt handler.  This function may be called with
@@ -200,7 +201,13 @@ void lock_acquire(struct lock *lock)
 
     if (lock->holder != NULL && lock->holder->priority < cur->priority)
     {
-        lock->holder->priority = cur->priority;
+        struct thread *donee = lock->holder;
+        while (donee != NULL)
+        {
+            donee->priority = cur->priority;
+            donee = donee->donee;
+        }
+        cur->donee = lock->holder;
         list_push_back(&lock->holder->donators, &cur->doelem);
     }
 
@@ -229,7 +236,7 @@ bool lock_try_acquire(struct lock *lock)
 
 /* Delete all donators of the current thread, which are waiting
    for LOCK. Then, release LOCK, which must be owned by the
-   current thread. Lastly, set the current thread's priority
+   current thread. Lastly, delete its donee and set its priority
    properly.
 
    An interrupt handler cannot acquire a lock, so it does not
@@ -255,6 +262,7 @@ void lock_release(struct lock *lock)
     lock->holder = NULL;
     sema_up(&lock->semaphore);
 
+    thread_current()->donee = NULL;
     thread_set_priority(thread_get_priority());
 }
 
