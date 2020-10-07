@@ -349,6 +349,8 @@ void thread_set_priority(int new_priority)
             return;
         }
     }
+    else
+        cur->original_priority = new_priority;
 
     cur->priority = new_priority;
     if (!list_empty(&ready_list))
