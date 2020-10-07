@@ -58,7 +58,7 @@ static long long user_ticks;   /* # of timer ticks in user programs. */
 #define TIME_SLICE 4          /* # of timer ticks to give each thread. */
 static unsigned thread_ticks; /* # of timer ticks since last yield. */
 
-/* If false (default), use round-robin scheduler.
+/* If false (default), use priority scheduler.
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
@@ -220,7 +220,8 @@ void thread_block(void)
 
 /* Transitions a blocked thread T to the ready-to-run state.
    This is an error if T is not blocked.  (Use thread_yield() to
-   make the running thread ready.)
+   make the running thread ready.) If the current thread has
+   lower priority than T, it should yield.
 
    This function does not preempt the running thread.  This can
    be important: if the caller had disabled interrupts itself,
@@ -237,6 +238,10 @@ void thread_unblock(struct thread *t)
     list_push_back(&ready_list, &t->elem);
     t->status = THREAD_READY;
     intr_set_level(old_level);
+
+    struct thread *cur = thread_current();
+    if (cur != idle_thread && t->priority > cur->priority)
+        thread_yield();
 }
 
 /* Returns the name of the running thread. */
@@ -324,16 +329,52 @@ void thread_foreach(thread_action_func *func, void *aux)
     }
 }
 
-/* Sets the current thread's priority to NEW_PRIORITY. */
+/* Sets the current thread's priority to NEW_PRIORITY.
+   If it is not related to donation, set the original
+   priority, too. If there is donators of the current
+   thread and NEW_PRIORITY is lower than the most
+   powerful donator, just return. If there is any
+   thread with higher priority than the current
+   thread, the current thread should yield. */
 void thread_set_priority(int new_priority)
 {
-    thread_current()->priority = new_priority;
+    struct thread *cur = thread_current();
+
+    if (!list_empty(&cur->donators))
+    {
+        struct list_elem *max_e = list_max(&cur->donators, less_priority, 1);
+
+        if (new_priority < list_entry(max_e, struct thread, doelem)->priority)
+        {
+            cur->original_priority = new_priority;
+            return;
+        }
+    }
+    else
+        cur->original_priority = new_priority;
+
+    cur->priority = new_priority;
+    if (!list_empty(&ready_list))
+    {
+        struct list_elem *max_e = list_max(&ready_list, less_priority, NULL);
+
+        if (cur->priority < list_entry(max_e, struct thread, elem)->priority)
+            thread_yield();
+    }
 }
 
-/* Returns the current thread's priority. */
+/* If the current thread has no donators, return its
+   original priority. Otherwise, return the highest
+   priority among donators. */
 int thread_get_priority(void)
 {
-    return thread_current()->priority;
+    struct thread *cur = thread_current();
+
+    if (list_empty(&cur->donators))
+        return cur->original_priority;
+
+    struct list_elem *max_e = list_max(&cur->donators, less_priority, 1);
+    return list_entry(max_e, struct thread, doelem)->priority;
 }
 
 /* Sets the current thread's nice value to NICE. */
@@ -367,6 +408,37 @@ int thread_get_recent_cpu(void)
 struct list *get_sleep_list(void)
 {
     return &sleep_list;
+}
+
+/* Returns the current thread's donators list. */
+struct list *thread_get_donators(void)
+{
+    return &thread_current()->donators;
+}
+
+/* Sets the current thread's donee to NEW_DONEE. */
+void thread_set_donee(struct thread *new_donee)
+{
+    thread_current()->donee = new_donee;
+}
+
+/* Returns the current thread's donee. */
+struct thread *thread_get_donee(void)
+{
+    return thread_current()->donee;
+}
+
+/* Compares priority of two list elements A and B. If
+   aux is 1, A and B are elements of donators list.
+   Returns true if A is less than B, or false if A is
+   greater than or equal to B. */
+bool less_priority(const struct list_elem *a, const struct list_elem *b, void *aux)
+{
+    const struct thread *a_t = (aux == 1) ? list_entry(a, struct thread, doelem)
+                                          : list_entry(a, struct thread, elem);
+    const struct thread *b_t = (aux == 1) ? list_entry(b, struct thread, doelem)
+                                          : list_entry(b, struct thread, elem);
+    return a_t->priority < b_t->priority;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -458,7 +530,9 @@ init_thread(struct thread *t, const char *name, int priority)
     t->status = THREAD_BLOCKED;
     strlcpy(t->name, name, sizeof t->name);
     t->stack = (uint8_t *)t + PGSIZE;
-    t->priority = priority;
+    t->priority = t->original_priority = priority;
+    list_init(&t->donators);
+    t->donee = NULL;
     t->magic = THREAD_MAGIC;
 
     old_level = intr_disable();
@@ -483,14 +557,21 @@ alloc_frame(struct thread *t, size_t size)
    return a thread from the run queue, unless the run queue is
    empty.  (If the running thread can continue running, then it
    will be in the run queue.)  If the run queue is empty, return
-   idle_thread. */
+   idle_thread. Picks one thread with the highest priority when
+   choosing the next one. */
 static struct thread *
 next_thread_to_run(void)
 {
     if (list_empty(&ready_list))
         return idle_thread;
     else
-        return list_entry(list_pop_front(&ready_list), struct thread, elem);
+    {
+        struct list_elem *max_e = list_max(&ready_list, less_priority, NULL);
+        struct thread *max_t = list_entry(max_e, struct thread, elem);
+
+        list_remove(max_e);
+        return max_t;
+    }
 }
 
 /* Completes a thread switch by activating the new thread's page
