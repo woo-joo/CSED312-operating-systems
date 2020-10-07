@@ -410,6 +410,24 @@ struct list *get_sleep_list(void)
     return &sleep_list;
 }
 
+/* Returns the current thread's donators list. */
+struct list *thread_get_donators(void)
+{
+    return &thread_current()->donators;
+}
+
+/* Sets the current thread's donee to NEW_DONEE. */
+void thread_set_donee(struct thread *new_donee)
+{
+    thread_current()->donee = new_donee;
+}
+
+/* Returns the current thread's donee. */
+struct thread *thread_get_donee(void)
+{
+    return thread_current()->donee;
+}
+
 /* Compares priority of two list elements A and B. If
    aux is 1, A and B are elements of donators list.
    Returns true if A is less than B, or false if A is

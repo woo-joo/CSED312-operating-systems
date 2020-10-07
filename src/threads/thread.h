@@ -148,6 +148,9 @@ int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
 
 struct list *get_sleep_list(void);
+struct list *thread_get_donators(void);
+struct thread *thread_get_donee(void);
+void thread_set_donee(struct thread *);
 
 list_less_func less_priority;
 

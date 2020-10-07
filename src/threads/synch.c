@@ -207,12 +207,12 @@ void lock_acquire(struct lock *lock)
             donee->priority = cur->priority;
             donee = donee->donee;
         }
-        cur->donee = lock->holder;
+        thread_set_donee(lock->holder);
         list_push_back(&lock->holder->donators, &cur->doelem);
     }
 
     sema_down(&lock->semaphore);
-    lock->holder = thread_current();
+    lock->holder = cur;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -248,7 +248,7 @@ void lock_release(struct lock *lock)
     ASSERT(lock_held_by_current_thread(lock));
 
     struct list *waiters = &lock->semaphore.waiters,
-                *donators = &thread_current()->donators;
+                *donators = thread_get_donators();
     struct list_elem *e, *de;
 
     for (e = list_begin(waiters); e != list_end(waiters); e = list_next(e))
@@ -262,7 +262,7 @@ void lock_release(struct lock *lock)
     lock->holder = NULL;
     sema_up(&lock->semaphore);
 
-    thread_current()->donee = NULL;
+    thread_set_donee(NULL);
     thread_set_priority(thread_get_priority());
 }
 
