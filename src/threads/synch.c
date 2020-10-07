@@ -32,6 +32,8 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+static list_less_func less_sema_priority;
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -281,6 +283,7 @@ struct semaphore_elem
 {
     struct list_elem elem;      /* List element. */
     struct semaphore semaphore; /* This semaphore. */
+    int priority;               /* Priority. */
 };
 
 /* Initializes condition variable COND.  A condition variable
@@ -323,6 +326,7 @@ void cond_wait(struct condition *cond, struct lock *lock)
     ASSERT(lock_held_by_current_thread(lock));
 
     sema_init(&waiter.semaphore, 0);
+    waiter.priority = thread_get_priority();
     list_push_back(&cond->waiters, &waiter.elem);
     lock_release(lock);
     sema_down(&waiter.semaphore);
@@ -344,9 +348,13 @@ void cond_signal(struct condition *cond, struct lock *lock UNUSED)
     ASSERT(lock_held_by_current_thread(lock));
 
     if (!list_empty(&cond->waiters))
-        sema_up(&list_entry(list_pop_front(&cond->waiters),
-                            struct semaphore_elem, elem)
-                     ->semaphore);
+    {
+        struct list_elem *e = list_max(&cond->waiters, less_sema_priority, NULL);
+        struct semaphore_elem *se = list_entry(e, struct semaphore_elem, elem);
+
+        list_remove(e);
+        sema_up(&se->semaphore);
+    }
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
@@ -362,4 +370,15 @@ void cond_broadcast(struct condition *cond, struct lock *lock)
 
     while (!list_empty(&cond->waiters))
         cond_signal(cond, lock);
+}
+
+/* Compares priority of two list elements A and B.
+   Returns true if A is less than B, or false if A is
+   greater than or equal to B. */
+static bool
+less_sema_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+    const struct semaphore_elem *a_s = list_entry(a, struct semaphore_elem, elem);
+    const struct semaphore_elem *b_s = list_entry(b, struct semaphore_elem, elem);
+    return a_s->priority < b_s->priority;
 }
