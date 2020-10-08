@@ -108,6 +108,10 @@ struct thread
     struct thread *donee;    /* Thread that is given priority. */
 
     /* Owned by thread.c. */
+    int nice;       /* Figure that indicates how nice to others. */
+    int recent_cpu; /* Weighted average amount of received CPU time. */
+
+    /* Owned by thread.c. */
     unsigned magic; /* Detects stack overflow. */
 };
 
