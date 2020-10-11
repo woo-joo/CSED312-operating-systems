@@ -98,6 +98,19 @@ struct thread
     uint32_t *pagedir; /* Page directory. */
 #endif
 
+    /* Owned by devices/timer.c. */
+    int64_t wake_ticks; /* Ticks to wake up. */
+
+    /* Shared between thread.c and synch.c. */
+    int original_priority;   /* Original priority before donation. */
+    struct list donators;    /* List of donators. */
+    struct list_elem doelem; /* List element for donators list. */
+    struct thread *donee;    /* Thread that is given priority. */
+
+    /* Owned by thread.c. */
+    int nice;       /* Figure that indicates how nice to others. */
+    int recent_cpu; /* Weighted average amount of received CPU time. */
+
     /* Owned by thread.c. */
     unsigned magic; /* Detects stack overflow. */
 };
@@ -137,5 +150,12 @@ int thread_get_nice(void);
 void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
+
+struct list *get_sleep_list(void);
+struct list *thread_get_donators(void);
+struct thread *thread_get_donee(void);
+void thread_set_donee(struct thread *);
+
+list_less_func less_priority;
 
 #endif /* threads/thread.h */
