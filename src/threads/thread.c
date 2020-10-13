@@ -376,18 +376,21 @@ void thread_set_priority(int new_priority)
 {
     struct thread *cur = thread_current();
 
-    if (!list_empty(&cur->donators))
+    if (!thread_mlfqs)
     {
-        struct list_elem *max_e = list_max(&cur->donators, less_priority, 1);
-
-        if (new_priority < list_entry(max_e, struct thread, doelem)->priority)
+        if (!list_empty(&cur->donators))
         {
-            cur->original_priority = new_priority;
-            return;
+            struct list_elem *max_e = list_max(&cur->donators, less_priority, 1);
+
+            if (new_priority < list_entry(max_e, struct thread, doelem)->priority)
+            {
+                cur->original_priority = new_priority;
+                return;
+            }
         }
+        else
+            cur->original_priority = new_priority;
     }
-    else
-        cur->original_priority = new_priority;
 
     cur->priority = new_priority;
     if (!list_empty(&ready_list))
@@ -406,7 +409,7 @@ int thread_get_priority(void)
 {
     struct thread *cur = thread_current();
 
-    if (list_empty(&cur->donators))
+    if (thread_mlfqs || list_empty(&cur->donators))
         return cur->original_priority;
 
     struct list_elem *max_e = list_max(&cur->donators, less_priority, 1);
