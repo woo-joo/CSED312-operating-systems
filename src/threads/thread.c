@@ -427,19 +427,28 @@ void thread_set_nice(int new_nice)
 /* Returns the current thread's nice value. */
 int thread_get_nice(void)
 {
-    return thread_current()->nice;
+    enum intr_level old_level = intr_disable();
+    int ret = thread_current()->nice;
+    intr_set_level(old_level);
+    return ret;
 }
 
 /* Returns 100 times the system load average. */
 int thread_get_load_avg(void)
 {
-    return fixed_to_int(fixed_mul_int(load_avg, 100));
+    enum intr_level old_level = intr_disable();
+    int ret = fixed_to_int(fixed_mul_int(load_avg, 100));
+    intr_set_level(old_level);
+    return ret;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int thread_get_recent_cpu(void)
 {
-    return fixed_to_int(fixed_mul_int(thread_current()->recent_cpu, 100));
+    enum intr_level old_level = intr_disable();
+    int ret = fixed_to_int(fixed_mul_int(thread_current()->recent_cpu, 100));
+    intr_set_level(old_level);
+    return ret;
 }
 
 /* Returns sleep list */
@@ -708,6 +717,8 @@ allocate_tid(void)
 static void
 update_priority(struct thread *t, void *aux)
 {
+    if (t == idle_thread)
+        return;
     int pri_max_term = int_to_fixed(PRI_MAX),
         recent_cpu_term = fixed_div_int(t->recent_cpu, 4),
         nice_term = 2 * t->nice;
@@ -726,6 +737,8 @@ update_priority(struct thread *t, void *aux)
 static void
 update_recent_cpu(struct thread *t, void *aux UNUSED)
 {
+    if (t == idle_thread)
+        return;
     int load_avg_term = fixed_mul_int(load_avg, 2),
         coefficient = fixed_div_fixed(load_avg_term, fixed_plus_int(load_avg_term, 1));
     t->recent_cpu = fixed_plus_int(fixed_mul_fixed(coefficient, t->recent_cpu), t->nice);
