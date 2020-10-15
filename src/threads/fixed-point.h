@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-/* # of fractional bits. */
+/* Shift factor. (# of fractional bits = 14) */
 #define f (1 << 14)
 
 /* Converts integer N to fixed point number. */
