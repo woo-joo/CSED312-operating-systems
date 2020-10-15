@@ -374,23 +374,23 @@ void thread_foreach(thread_action_func *func, void *aux)
    thread, the current thread should yield. */
 void thread_set_priority(int new_priority)
 {
+    if (thread_mlfqs)
+        return;
+
     struct thread *cur = thread_current();
 
-    if (!thread_mlfqs)
+    if (!list_empty(&cur->donators))
     {
-        if (!list_empty(&cur->donators))
-        {
-            struct list_elem *max_e = list_max(&cur->donators, less_priority, 1);
+        struct list_elem *max_e = list_max(&cur->donators, less_priority, 1);
 
-            if (new_priority < list_entry(max_e, struct thread, doelem)->priority)
-            {
-                cur->original_priority = new_priority;
-                return;
-            }
-        }
-        else
+        if (new_priority < list_entry(max_e, struct thread, doelem)->priority)
+        {
             cur->original_priority = new_priority;
+            return;
+        }
     }
+    else
+        cur->original_priority = new_priority;
 
     cur->priority = new_priority;
     if (!list_empty(&ready_list))
@@ -727,10 +727,17 @@ update_priority(struct thread *t, void *aux)
         new_priority = PRI_MAX;
     if (new_priority < PRI_MIN)
         new_priority = PRI_MIN;
-    if (t == running_thread() && aux == 1)
-        thread_set_priority(new_priority);
-    else
-        t->priority = t->original_priority = new_priority;
+    t->priority = t->original_priority = new_priority;
+
+    struct thread *cur = running_thread();
+    if (t == cur && aux == 1)
+        if (!list_empty(&ready_list))
+        {
+            struct list_elem *max_e = list_max(&ready_list, less_priority, NULL);
+
+            if (cur->priority < list_entry(max_e, struct thread, elem)->priority)
+                thread_yield();
+        }
 }
 
 /* Updates recent cpu of T. */
