@@ -1,6 +1,7 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include "devices/shutdown.h"
 #include "userprog/pagedir.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
@@ -9,6 +10,8 @@
 static void syscall_handler(struct intr_frame *);
 
 static void check_vaddr(const void *vaddr);
+
+static void syscall_halt(void);
 
 /* Registers the system call interrupt handler. */
 void syscall_init(void)
@@ -31,6 +34,11 @@ syscall_handler(struct intr_frame *f UNUSED)
 
     switch (syscall_num)
     {
+    case SYS_HALT:
+    {
+        syscall_halt();
+        NOT_REACHED();
+    }
     case SYS_EXIT:
     {
         check_vaddr(esp + sizeof(int));
@@ -52,6 +60,12 @@ check_vaddr(const void *vaddr)
     if (!vaddr || !is_user_vaddr(vaddr) ||
         !pagedir_get_page(thread_get_pagedir(), vaddr))
         syscall_exit(-1);
+}
+
+/* Handles halt() system call. */
+static void syscall_halt(void)
+{
+    shutdown_power_off();
 }
 
 /* Handles exit() system call. */
