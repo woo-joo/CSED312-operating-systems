@@ -21,13 +21,16 @@
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
 
+static void parse_line(const char *line, int *argc, char **argv);
+static void push_arguments(int argc, char **argv, void **esp);
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t process_execute(const char *file_name)
 {
-    char *fn_copy;
+    char *fn_copy, *thread_name, *save_ptr;
     tid_t tid;
 
     /* Make a copy of FILE_NAME.
@@ -38,7 +41,8 @@ tid_t process_execute(const char *file_name)
     strlcpy(fn_copy, file_name, PGSIZE);
 
     /* Create a new thread to execute FILE_NAME. */
-    tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy);
+    thread_name = strtok_r(file_name, " ", &save_ptr);
+    tid = thread_create(thread_name, PRI_DEFAULT, start_process, fn_copy);
     if (tid == TID_ERROR)
         palloc_free_page(fn_copy);
     return tid;
@@ -52,13 +56,21 @@ start_process(void *file_name_)
     char *file_name = file_name_;
     struct intr_frame if_;
     bool success;
+    int argc = 0;
+    char *argv[MAX_ARGS];
 
-    /* Initialize interrupt frame and load executable. */
+    /* Initialize interrupt frame. */
     memset(&if_, 0, sizeof if_);
     if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
+
+    /* Parse FILE_NAME, load executable, and push arguments
+     into stack. */
+    parse_line(file_name, &argc, argv);
     success = load(file_name, &if_.eip, &if_.esp);
+    if (success)
+        push_arguments(argc, argv, &if_.esp);
 
     /* If load failed, quit. */
     palloc_free_page(file_name);
@@ -89,6 +101,8 @@ start_process(void *file_name_)
    does nothing. */
 int process_wait(tid_t child_tid UNUSED)
 {
+    while (1)
+        ;
     return -1;
 }
 
@@ -452,4 +466,52 @@ install_page(void *upage, void *kpage, bool writable)
     /* Verify that there's not already a page at that virtual
      address, then map our page there. */
     return (pagedir_get_page(t->pagedir, upage) == NULL && pagedir_set_page(t->pagedir, upage, kpage, writable));
+}
+
+/* Parses LINE by spaces and set ARGC and ARGV. */
+static void parse_line(const char *line, int *argc, char **argv)
+{
+    char *token, *save_ptr;
+
+    for (token = strtok_r(line, " ", &save_ptr); token;
+         token = strtok_r(NULL, " ", &save_ptr))
+        argv[(*argc)++] = token;
+}
+
+/* Pushes arguments into stack. */
+static void push_arguments(int argc, char **argv, void **esp)
+{
+    uintptr_t addr[MAX_ARGS];
+    int i;
+
+    /* Push ARGVs. */
+    for (i = argc - 1; i >= 0; i--)
+    {
+        *esp -= strlen(argv[i]) + 1;
+        strlcpy(*esp, argv[i], strlen(argv[i]) + 1);
+        addr[i] = (uintptr_t)*esp;
+    }
+
+    /* Word alignment. */
+    *esp = (uintptr_t)*esp & ~0x3;
+
+    /* Push ARGV addresses. */
+    *esp -= sizeof(uintptr_t);
+    *(uintptr_t *)*esp = (uintptr_t)0;
+    for (i = argc - 1; i >= 0; i--)
+    {
+        *esp -= sizeof(uintptr_t);
+        *(uintptr_t *)*esp = addr[i];
+    }
+
+    /* Push ARGV start address. */
+    *esp -= sizeof(uintptr_t);
+    *(uintptr_t *)*esp = (uintptr_t)*esp + sizeof(uintptr_t);
+
+    /* Push ARGC. */
+    *esp -= sizeof(int);
+    *(int *)*esp = argc;
+
+    /* Push dummy return address. */
+    *esp -= sizeof(uintptr_t);
 }
