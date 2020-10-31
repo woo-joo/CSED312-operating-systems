@@ -156,6 +156,10 @@ struct list *thread_get_donators(void);
 struct thread *thread_get_donee(void);
 void thread_set_donee(struct thread *);
 
+#ifdef USERPROG
+uint32_t *thread_get_pagedir(void);
+#endif
+
 list_less_func less_priority;
 
 #endif /* threads/thread.h */

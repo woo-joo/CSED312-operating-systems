@@ -475,6 +475,16 @@ struct thread *thread_get_donee(void)
     return thread_current()->donee;
 }
 
+#ifdef USERPROG
+
+/* Returns the current thread's pagedir. */
+uint32_t *thread_get_pagedir(void)
+{
+    return thread_current()->pagedir;
+}
+
+#endif
+
 /* Compares priority of two list elements A and B. If
    aux is 1, A and B are elements of donators list.
    Returns true if A is less than B, or false if A is
