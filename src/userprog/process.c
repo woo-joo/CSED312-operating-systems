@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
+#include "userprog/syscall.h"
 #include "userprog/tss.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
@@ -32,32 +33,59 @@ tid_t process_execute(const char *file_name)
 {
     char *fn_copy, *thread_name, *save_ptr;
     tid_t tid;
+    struct process *pcb;
 
     /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
     fn_copy = palloc_get_page(0);
-    if (fn_copy == NULL)
+    if (!fn_copy)
         return TID_ERROR;
     strlcpy(fn_copy, file_name, PGSIZE);
 
+    /* Create a process control block for the new process. */
+    pcb = palloc_get_page(0);
+    if (!pcb)
+        return TID_ERROR;
+    pcb->file_name = fn_copy;
+    pcb->parent = thread_current();
+    pcb->is_loaded = false;
+    sema_init(&pcb->load_sema, 0);
+    pcb->is_exited = false;
+    sema_init(&pcb->exit_sema, 0);
+    pcb->exit_status = -1;
+
     /* Create a new thread to execute FILE_NAME. */
     thread_name = strtok_r(file_name, " ", &save_ptr);
-    tid = thread_create(thread_name, PRI_DEFAULT, start_process, fn_copy);
+    tid = thread_create(thread_name, PRI_DEFAULT, start_process, pcb);
     if (tid == TID_ERROR)
+    {
         palloc_free_page(fn_copy);
+        palloc_free_page(pcb);
+        goto done;
+    }
+
+    sema_down(&pcb->load_sema);
+    if (pcb->pid != PID_ERROR)
+        list_push_back(thread_get_children(), &pcb->childelem);
+
+done:
     return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process(void *file_name_)
+start_process(void *pcb_)
 {
-    char *file_name = file_name_;
+    struct process *pcb = pcb_;
     struct intr_frame if_;
     bool success;
     int argc = 0;
     char *argv[MAX_ARGS];
+    char *file_name = pcb->file_name;
+
+    /* Set the current process's pcb to PCB. */
+    thread_set_pcb(pcb);
 
     /* Initialize interrupt frame. */
     memset(&if_, 0, sizeof if_);
@@ -65,17 +93,20 @@ start_process(void *file_name_)
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
 
-    /* Parse FILE_NAME, load executable, and push arguments
-     into stack. */
+    /* Parse FILE_NAME and load executable. */
     parse_line(file_name, &argc, argv);
-    success = load(file_name, &if_.eip, &if_.esp);
+    success = load(argv[0], &if_.eip, &if_.esp);
+    pcb->pid = success ? thread_tid() : PID_ERROR;
+    sema_up(&pcb->load_sema);
+
+    /* push arguments into stack. */
     if (success)
         push_arguments(argc, argv, &if_.esp);
 
     /* If load failed, quit. */
     palloc_free_page(file_name);
     if (!success)
-        thread_exit();
+        syscall_exit(-1);
 
     /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in

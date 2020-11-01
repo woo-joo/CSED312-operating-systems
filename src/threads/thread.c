@@ -483,6 +483,24 @@ uint32_t *thread_get_pagedir(void)
     return thread_current()->pagedir;
 }
 
+/* Sets the current thread's pcb to NEW_PCB. */
+void thread_set_pcb(struct process *new_pcb)
+{
+    thread_current()->pcb = new_pcb;
+}
+
+/* Returns the current thread's pcb. */
+struct process *thread_get_pcb(void)
+{
+    return thread_current()->pcb;
+}
+
+/* Returns the current thread's children. */
+struct list *thread_get_children(void)
+{
+    return &thread_current()->children;
+}
+
 #endif
 
 /* Compares priority of two list elements A and B. If
@@ -600,6 +618,10 @@ init_thread(struct thread *t, const char *name, int priority)
                             : thread_current()->recent_cpu;
         update_priority(t, NULL);
     }
+#ifdef USERPROG
+    t->pcb = NULL;
+    list_init(&t->children);
+#endif
     t->magic = THREAD_MAGIC;
 
     old_level = intr_disable();

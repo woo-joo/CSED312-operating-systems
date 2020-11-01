@@ -22,7 +22,7 @@ void syscall_init(void)
 /* Pops the system call number and handles system call
    according to it. */
 static void
-syscall_handler(struct intr_frame *f UNUSED)
+syscall_handler(struct intr_frame *f)
 {
     void *esp = f->esp;
     int syscall_num;

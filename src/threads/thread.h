@@ -93,11 +93,6 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem; /* List element. */
 
-#ifdef USERPROG
-    /* Owned by userprog/process.c. */
-    uint32_t *pagedir; /* Page directory. */
-#endif
-
     /* Owned by devices/timer.c. */
     int64_t wake_ticks; /* Ticks to wake up. */
 
@@ -110,6 +105,13 @@ struct thread
     /* Owned by thread.c. */
     int nice;       /* Figure that indicates how nice to others. */
     int recent_cpu; /* Weighted average amount of received CPU time. */
+
+#ifdef USERPROG
+    /* Shared between userprog/process.c and userprog/syscall.c. */
+    uint32_t *pagedir;    /* Page directory. */
+    struct process *pcb;  /* Process control block. */
+    struct list children; /* List of children processes. */
+#endif
 
     /* Owned by thread.c. */
     unsigned magic; /* Detects stack overflow. */
@@ -158,6 +160,9 @@ void thread_set_donee(struct thread *);
 
 #ifdef USERPROG
 uint32_t *thread_get_pagedir(void);
+struct process *thread_get_pcb(void);
+void thread_set_pcb(struct process *);
+struct list *thread_get_children(void);
 #endif
 
 list_less_func less_priority;
