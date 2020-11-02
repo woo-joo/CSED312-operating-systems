@@ -64,6 +64,8 @@ tid_t process_execute(const char *file_name)
         goto done;
     }
 
+    /* Wait until child process's program is loaded. If it
+     successfully load its program, push it into children list. */
     sema_down(&pcb->load_sema);
     if (pcb->pid != PID_ERROR)
         list_push_back(thread_get_children(), &pcb->childelem);
@@ -126,26 +128,44 @@ start_process(void *pcb_)
    exception), returns -1.  If TID is invalid or if it was not a
    child of the calling process, or if process_wait() has already
    been successfully called for the given TID, returns -1
-   immediately, without waiting.
-
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
-int process_wait(tid_t child_tid UNUSED)
+   immediately, without waiting. */
+int process_wait(tid_t child_tid)
 {
-    while (1)
-        ;
-    return -1;
+    struct process *child = process_get_child(child_tid);
+    int exit_status;
+
+    /* If CHILD is not the current process's child or is already
+     retrieved by the current process, return -1. */
+    if (!child)
+        return -1;
+
+    /* Wait until CHILD exits, and retrieve it. */
+    sema_down(&child->exit_sema);
+    exit_status = child->exit_status;
+    process_remove_child(child);
+
+    return exit_status;
 }
 
 /* Free the current process's resources. */
 void process_exit(void)
 {
     struct thread *cur = thread_current();
+    struct process *pcb = thread_get_pcb();
+    struct list *children = thread_get_children();
+    struct list_elem *e;
     uint32_t *pd;
+
+    /* Set exit flag, remove all of the current process's exited children,
+     and notify its parent of its termination. */
+    pcb->is_exited = true;
+    for (e = list_begin(children); e != list_end(children); e = list_next(e))
+        process_remove_child(list_entry(e, struct process, childelem));
+    sema_up(&pcb->exit_sema);
 
     /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-    pd = cur->pagedir;
+    pd = thread_get_pagedir();
     if (pd != NULL)
     {
         /* Correct ordering here is crucial.  We must set
@@ -155,7 +175,7 @@ void process_exit(void)
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-        cur->pagedir = NULL;
+        thread_set_pagedir(NULL);
         pagedir_activate(NULL);
         pagedir_destroy(pd);
     }
@@ -174,6 +194,34 @@ void process_activate(void)
     /* Set thread's kernel stack for use in processing
      interrupts. */
     tss_update();
+}
+
+/* Returns the current process's child process with pid PID. */
+struct process *process_get_child(pid_t pid)
+{
+    struct list *children = thread_get_children();
+    struct list_elem *e;
+
+    for (e = list_begin(children); e != list_end(children); e = list_next(e))
+    {
+        struct process *pcb = list_entry(e, struct process, childelem);
+
+        if (pcb->pid == pid)
+            return pcb;
+    }
+
+    return NULL;
+}
+
+/* If CHILD is terminated, remove it from the current process's
+   children list and free its page. */
+void process_remove_child(struct process *child)
+{
+    if (child && child->is_exited)
+    {
+        list_remove(&child->childelem);
+        palloc_free_page(child);
+    }
 }
 
 /* We load ELF binaries.  The following definitions are taken

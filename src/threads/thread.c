@@ -477,6 +477,12 @@ struct thread *thread_get_donee(void)
 
 #ifdef USERPROG
 
+/* Sets the current thread's pagedir to NEW_PAGEDIR. */
+void thread_set_pagedir(uint32_t *new_pagedir)
+{
+    thread_current()->pagedir = new_pagedir;
+}
+
 /* Returns the current thread's pagedir. */
 uint32_t *thread_get_pagedir(void)
 {

@@ -160,6 +160,7 @@ void thread_set_donee(struct thread *);
 
 #ifdef USERPROG
 uint32_t *thread_get_pagedir(void);
+void thread_set_pagedir(uint32_t *);
 struct process *thread_get_pcb(void);
 void thread_set_pcb(struct process *);
 struct list *thread_get_children(void);

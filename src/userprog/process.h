@@ -29,4 +29,7 @@ int process_wait(tid_t);
 void process_exit(void);
 void process_activate(void);
 
+struct process *process_get_child(pid_t);
+void process_remove_child(struct process *);
+
 #endif /* userprog/process.h */
