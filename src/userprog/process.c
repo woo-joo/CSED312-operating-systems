@@ -31,22 +31,26 @@ static void push_arguments(int argc, char **argv, void **esp);
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t process_execute(const char *file_name)
 {
-    char *fn_copy, *thread_name, *save_ptr;
+    char *fn_copy1, *fn_copy2, *thread_name, *save_ptr;
     tid_t tid;
     struct process *pcb;
 
-    /* Make a copy of FILE_NAME.
+    /* Make copies of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-    fn_copy = palloc_get_page(0);
-    if (!fn_copy)
+    fn_copy1 = palloc_get_page(0);
+    if (!fn_copy1)
         return TID_ERROR;
-    strlcpy(fn_copy, file_name, PGSIZE);
+    strlcpy(fn_copy1, file_name, PGSIZE);
+    fn_copy2 = palloc_get_page(0);
+    if (!fn_copy2)
+        return TID_ERROR;
+    strlcpy(fn_copy2, file_name, PGSIZE);
 
     /* Create a process control block for the new process. */
     pcb = palloc_get_page(0);
     if (!pcb)
         return TID_ERROR;
-    pcb->file_name = fn_copy;
+    pcb->file_name = fn_copy1;
     pcb->parent = thread_current();
     pcb->is_loaded = false;
     sema_init(&pcb->load_sema, 0);
@@ -55,11 +59,11 @@ tid_t process_execute(const char *file_name)
     pcb->exit_status = -1;
 
     /* Create a new thread to execute FILE_NAME. */
-    thread_name = strtok_r(file_name, " ", &save_ptr);
+    thread_name = strtok_r(fn_copy2, " ", &save_ptr);
     tid = thread_create(thread_name, PRI_DEFAULT, start_process, pcb);
     if (tid == TID_ERROR)
     {
-        palloc_free_page(fn_copy);
+        palloc_free_page(fn_copy1);
         palloc_free_page(pcb);
         goto done;
     }
@@ -71,6 +75,7 @@ tid_t process_execute(const char *file_name)
         list_push_back(thread_get_children(), &pcb->childelem);
 
 done:
+    palloc_free_page(fn_copy2);
     return tid;
 }
 
@@ -97,7 +102,7 @@ start_process(void *pcb_)
 
     /* Parse FILE_NAME and load executable. */
     parse_line(file_name, &argc, argv);
-    success = load(argv[0], &if_.eip, &if_.esp);
+    success = pcb->is_loaded = load(argv[0], &if_.eip, &if_.esp);
     pcb->pid = success ? thread_tid() : PID_ERROR;
     sema_up(&pcb->load_sema);
 
@@ -155,13 +160,19 @@ void process_exit(void)
     struct list *children = thread_get_children();
     struct list_elem *e;
     uint32_t *pd;
+    int max_fd = thread_get_next_fd(), i;
 
     /* Set exit flag, remove all of the current process's exited children,
-     and notify its parent of its termination. */
+     close all of its files, and notify its parent of its termination.
+     Finally, free its page if it is orphaned. */
     pcb->is_exited = true;
     for (e = list_begin(children); e != list_end(children); e = list_next(e))
         process_remove_child(list_entry(e, struct process, childelem));
+    for (i = 2; i < max_fd; i++)
+        syscall_close(i);
     sema_up(&pcb->exit_sema);
+    if (!pcb->parent)
+        palloc_free_page(pcb);
 
     /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -213,15 +224,35 @@ struct process *process_get_child(pid_t pid)
     return NULL;
 }
 
-/* If CHILD is terminated, remove it from the current process's
-   children list and free its page. */
+/* Removes CHILD from the current process's children list and
+   reset its parent. If it is terminated, free its page. */
 void process_remove_child(struct process *child)
 {
-    if (child && child->is_exited)
-    {
-        list_remove(&child->childelem);
+    if (!child)
+        return;
+
+    list_remove(&child->childelem);
+    child->parent = NULL;
+
+    if (child->is_exited)
         palloc_free_page(child);
+}
+
+/* Returns the current process's file descriptor entry with fd FD. */
+struct file_descriptor_entry *process_get_fde(int fd)
+{
+    struct list *fdt = thread_get_fdt();
+    struct list_elem *e;
+
+    for (e = list_begin(fdt); e != list_end(fdt); e = list_next(e))
+    {
+        struct file_descriptor_entry *fde = list_entry(e, struct file_descriptor_entry, fdtelem);
+
+        if (fde->fd == fd)
+            return fde;
     }
+
+    return NULL;
 }
 
 /* We load ELF binaries.  The following definitions are taken
