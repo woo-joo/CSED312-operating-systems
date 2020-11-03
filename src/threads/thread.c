@@ -477,10 +477,47 @@ struct thread *thread_get_donee(void)
 
 #ifdef USERPROG
 
+/* Sets the current thread's pagedir to NEW_PAGEDIR. */
+void thread_set_pagedir(uint32_t *new_pagedir)
+{
+    thread_current()->pagedir = new_pagedir;
+}
+
 /* Returns the current thread's pagedir. */
 uint32_t *thread_get_pagedir(void)
 {
     return thread_current()->pagedir;
+}
+
+/* Sets the current thread's pcb to NEW_PCB. */
+void thread_set_pcb(struct process *new_pcb)
+{
+    thread_current()->pcb = new_pcb;
+}
+
+/* Returns the current thread's pcb. */
+struct process *thread_get_pcb(void)
+{
+    return thread_current()->pcb;
+}
+
+/* Returns the current thread's children. */
+struct list *thread_get_children(void)
+{
+    return &thread_current()->children;
+}
+
+/* Returns the current thread's fdt. */
+struct list *thread_get_fdt(void)
+{
+    return &thread_current()->fdt;
+}
+
+/* Returns the current thread's next_fd and increments
+   it by 1. */
+int thread_get_next_fd(void)
+{
+    return thread_current()->next_fd++;
 }
 
 #endif
@@ -600,6 +637,12 @@ init_thread(struct thread *t, const char *name, int priority)
                             : thread_current()->recent_cpu;
         update_priority(t, NULL);
     }
+#ifdef USERPROG
+    t->pcb = NULL;
+    list_init(&t->children);
+    list_init(&t->fdt);
+    t->next_fd = 2;
+#endif
     t->magic = THREAD_MAGIC;
 
     old_level = intr_disable();

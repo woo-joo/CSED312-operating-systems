@@ -7,6 +7,7 @@
 #include <string.h>
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
+#include "userprog/syscall.h"
 #include "userprog/tss.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
@@ -30,34 +31,68 @@ static void push_arguments(int argc, char **argv, void **esp);
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t process_execute(const char *file_name)
 {
-    char *fn_copy, *thread_name, *save_ptr;
+    char *fn_copy1, *fn_copy2, *thread_name, *save_ptr;
     tid_t tid;
+    struct process *pcb;
 
-    /* Make a copy of FILE_NAME.
+    /* Make copies of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
-    fn_copy = palloc_get_page(0);
-    if (fn_copy == NULL)
+    fn_copy1 = palloc_get_page(0);
+    if (!fn_copy1)
         return TID_ERROR;
-    strlcpy(fn_copy, file_name, PGSIZE);
+    strlcpy(fn_copy1, file_name, PGSIZE);
+    fn_copy2 = palloc_get_page(0);
+    if (!fn_copy2)
+        return TID_ERROR;
+    strlcpy(fn_copy2, file_name, PGSIZE);
+
+    /* Create a process control block for the new process. */
+    pcb = palloc_get_page(0);
+    if (!pcb)
+        return TID_ERROR;
+    pcb->file_name = fn_copy1;
+    pcb->parent = thread_current();
+    pcb->is_loaded = false;
+    sema_init(&pcb->load_sema, 0);
+    pcb->is_exited = false;
+    sema_init(&pcb->exit_sema, 0);
+    pcb->exit_status = -1;
 
     /* Create a new thread to execute FILE_NAME. */
-    thread_name = strtok_r(file_name, " ", &save_ptr);
-    tid = thread_create(thread_name, PRI_DEFAULT, start_process, fn_copy);
+    thread_name = strtok_r(fn_copy2, " ", &save_ptr);
+    tid = thread_create(thread_name, PRI_DEFAULT, start_process, pcb);
     if (tid == TID_ERROR)
-        palloc_free_page(fn_copy);
+    {
+        palloc_free_page(fn_copy1);
+        palloc_free_page(pcb);
+        goto done;
+    }
+
+    /* Wait until child process's program is loaded. If it
+     successfully load its program, push it into children list. */
+    sema_down(&pcb->load_sema);
+    if (pcb->pid != PID_ERROR)
+        list_push_back(thread_get_children(), &pcb->childelem);
+
+done:
+    palloc_free_page(fn_copy2);
     return tid;
 }
 
 /* A thread function that loads a user process and starts it
    running. */
 static void
-start_process(void *file_name_)
+start_process(void *pcb_)
 {
-    char *file_name = file_name_;
+    struct process *pcb = pcb_;
     struct intr_frame if_;
     bool success;
     int argc = 0;
     char *argv[MAX_ARGS];
+    char *file_name = pcb->file_name;
+
+    /* Set the current process's pcb to PCB. */
+    thread_set_pcb(pcb);
 
     /* Initialize interrupt frame. */
     memset(&if_, 0, sizeof if_);
@@ -65,17 +100,20 @@ start_process(void *file_name_)
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
 
-    /* Parse FILE_NAME, load executable, and push arguments
-     into stack. */
+    /* Parse FILE_NAME and load executable. */
     parse_line(file_name, &argc, argv);
-    success = load(file_name, &if_.eip, &if_.esp);
+    success = pcb->is_loaded = load(argv[0], &if_.eip, &if_.esp);
+    pcb->pid = success ? thread_tid() : PID_ERROR;
+    sema_up(&pcb->load_sema);
+
+    /* push arguments into stack. */
     if (success)
         push_arguments(argc, argv, &if_.esp);
 
     /* If load failed, quit. */
     palloc_free_page(file_name);
     if (!success)
-        thread_exit();
+        syscall_exit(-1);
 
     /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -95,26 +133,50 @@ start_process(void *file_name_)
    exception), returns -1.  If TID is invalid or if it was not a
    child of the calling process, or if process_wait() has already
    been successfully called for the given TID, returns -1
-   immediately, without waiting.
-
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
-int process_wait(tid_t child_tid UNUSED)
+   immediately, without waiting. */
+int process_wait(tid_t child_tid)
 {
-    while (1)
-        ;
-    return -1;
+    struct process *child = process_get_child(child_tid);
+    int exit_status;
+
+    /* If CHILD is not the current process's child or is already
+     retrieved by the current process, return -1. */
+    if (!child)
+        return -1;
+
+    /* Wait until CHILD exits, and retrieve it. */
+    sema_down(&child->exit_sema);
+    exit_status = child->exit_status;
+    process_remove_child(child);
+
+    return exit_status;
 }
 
 /* Free the current process's resources. */
 void process_exit(void)
 {
     struct thread *cur = thread_current();
+    struct process *pcb = thread_get_pcb();
+    struct list *children = thread_get_children();
+    struct list_elem *e;
     uint32_t *pd;
+    int max_fd = thread_get_next_fd(), i;
+
+    /* Set exit flag, remove all of the current process's exited children,
+     close all of its files, and notify its parent of its termination.
+     Finally, free its page if it is orphaned. */
+    pcb->is_exited = true;
+    for (e = list_begin(children); e != list_end(children); e = list_next(e))
+        process_remove_child(list_entry(e, struct process, childelem));
+    for (i = 2; i < max_fd; i++)
+        syscall_close(i);
+    sema_up(&pcb->exit_sema);
+    if (!pcb->parent)
+        palloc_free_page(pcb);
 
     /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-    pd = cur->pagedir;
+    pd = thread_get_pagedir();
     if (pd != NULL)
     {
         /* Correct ordering here is crucial.  We must set
@@ -124,7 +186,7 @@ void process_exit(void)
          directory before destroying the process's page
          directory, or our active page directory will be one
          that's been freed (and cleared). */
-        cur->pagedir = NULL;
+        thread_set_pagedir(NULL);
         pagedir_activate(NULL);
         pagedir_destroy(pd);
     }
@@ -143,6 +205,54 @@ void process_activate(void)
     /* Set thread's kernel stack for use in processing
      interrupts. */
     tss_update();
+}
+
+/* Returns the current process's child process with pid PID. */
+struct process *process_get_child(pid_t pid)
+{
+    struct list *children = thread_get_children();
+    struct list_elem *e;
+
+    for (e = list_begin(children); e != list_end(children); e = list_next(e))
+    {
+        struct process *pcb = list_entry(e, struct process, childelem);
+
+        if (pcb->pid == pid)
+            return pcb;
+    }
+
+    return NULL;
+}
+
+/* Removes CHILD from the current process's children list and
+   reset its parent. If it is terminated, free its page. */
+void process_remove_child(struct process *child)
+{
+    if (!child)
+        return;
+
+    list_remove(&child->childelem);
+    child->parent = NULL;
+
+    if (child->is_exited)
+        palloc_free_page(child);
+}
+
+/* Returns the current process's file descriptor entry with fd FD. */
+struct file_descriptor_entry *process_get_fde(int fd)
+{
+    struct list *fdt = thread_get_fdt();
+    struct list_elem *e;
+
+    for (e = list_begin(fdt); e != list_end(fdt); e = list_next(e))
+    {
+        struct file_descriptor_entry *fde = list_entry(e, struct file_descriptor_entry, fdtelem);
+
+        if (fde->fd == fd)
+            return fde;
+    }
+
+    return NULL;
 }
 
 /* We load ELF binaries.  The following definitions are taken
