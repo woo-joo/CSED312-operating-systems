@@ -108,11 +108,12 @@ struct thread
 
 #ifdef USERPROG
     /* Shared between userprog/process.c and userprog/syscall.c. */
-    uint32_t *pagedir;    /* Page directory. */
-    struct process *pcb;  /* Process control block. */
-    struct list children; /* List of children processes. */
-    struct list fdt;      /* List of file descriptor entries. */
-    int next_fd;          /* File descriptor for next file. */
+    uint32_t *pagedir;         /* Page directory. */
+    struct process *pcb;       /* Process control block. */
+    struct list children;      /* List of children processes. */
+    struct list fdt;           /* List of file descriptor entries. */
+    int next_fd;               /* File descriptor for next file. */
+    struct file *running_file; /* Currently running file. */
 #endif
 
     /* Owned by thread.c. */
@@ -168,6 +169,8 @@ void thread_set_pcb(struct process *);
 struct list *thread_get_children(void);
 struct list *thread_get_fdt(void);
 int thread_get_next_fd(void);
+struct file *thread_get_running_file(void);
+void thread_set_running_file(struct file *);
 #endif
 
 list_less_func less_priority;

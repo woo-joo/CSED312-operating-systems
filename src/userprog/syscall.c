@@ -14,7 +14,7 @@
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
 
-static struct lock filesys_lock;
+struct lock filesys_lock;
 
 static void syscall_handler(struct intr_frame *);
 
@@ -215,6 +215,11 @@ check_vaddr(const void *vaddr)
     if (!vaddr || !is_user_vaddr(vaddr) ||
         !pagedir_get_page(thread_get_pagedir(), vaddr))
         syscall_exit(-1);
+}
+
+struct lock *syscall_get_filesys_lock(void)
+{
+    return &filesys_lock;
 }
 
 /* Handles halt() system call. */
