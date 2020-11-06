@@ -159,6 +159,7 @@ void process_exit(void)
     struct process *pcb = thread_get_pcb();
     struct list *children = thread_get_children();
     struct list_elem *e;
+    struct lock *filesys_lock = syscall_get_filesys_lock();
     uint32_t *pd;
     int max_fd = thread_get_next_fd(), i;
 
@@ -173,6 +174,11 @@ void process_exit(void)
     sema_up(&pcb->exit_sema);
     if (!pcb->parent)
         palloc_free_page(pcb);
+
+    /* Close the running file. */
+    lock_acquire(filesys_lock);
+    file_close(thread_get_running_file());
+    lock_release(filesys_lock);
 
     /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -333,6 +339,7 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
     struct thread *t = thread_current();
     struct Elf32_Ehdr ehdr;
     struct file *file = NULL;
+    struct lock *filesys_lock = syscall_get_filesys_lock();
     off_t file_ofs;
     bool success = false;
     int i;
@@ -344,6 +351,7 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
     process_activate();
 
     /* Open executable file. */
+    lock_acquire(filesys_lock);
     file = filesys_open(file_name);
     if (file == NULL)
     {
@@ -423,11 +431,16 @@ bool load(const char *file_name, void (**eip)(void), void **esp)
     /* Start address. */
     *eip = (void (*)(void))ehdr.e_entry;
 
+    /* Set the current process's running_file to FILE and
+     make it unwritable. */
+    thread_set_running_file(file);
+    file_deny_write(file);
+
     success = true;
 
 done:
     /* We arrive here whether the load is successful or not. */
-    file_close(file);
+    lock_release(filesys_lock);
     return success;
 }
 

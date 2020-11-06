@@ -520,6 +520,18 @@ int thread_get_next_fd(void)
     return thread_current()->next_fd++;
 }
 
+/* Sets the current thread's running_file to NEW_RUNNING_FILE. */
+void thread_set_running_file(struct file *new_running_file)
+{
+    thread_current()->running_file = new_running_file;
+}
+
+/* Returns the current thread's running_file. */
+struct file *thread_get_running_file(void)
+{
+    return thread_current()->running_file;
+}
+
 #endif
 
 /* Compares priority of two list elements A and B. If
