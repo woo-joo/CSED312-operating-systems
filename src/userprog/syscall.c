@@ -128,13 +128,13 @@ syscall_handler(struct intr_frame *f)
     }
     case SYS_FILESIZE:
     {
-        int filesize;
+        int fd;
 
         check_vaddr(esp + sizeof(uintptr_t));
         check_vaddr(esp + 2 * sizeof(uintptr_t) - 1);
-        filesize = *(int *)(esp + sizeof(uintptr_t));
+        fd = *(int *)(esp + sizeof(uintptr_t));
 
-        f->eax = (uint32_t)syscall_filesize(filesize);
+        f->eax = (uint32_t)syscall_filesize(fd);
         break;
     }
     case SYS_READ:

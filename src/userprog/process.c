@@ -172,7 +172,7 @@ void process_exit(void)
     for (i = 2; i < max_fd; i++)
         syscall_close(i);
     sema_up(&pcb->exit_sema);
-    if (!pcb->parent)
+    if (pcb && !pcb->parent)
         palloc_free_page(pcb);
 
     /* Close the running file. */
