@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <hash.h>
+#include "filesys/file.h"
+#include "filesys/off_t.h"
 
 /* States of a page. */
 enum page_status
@@ -17,7 +19,7 @@ enum page_status
 /* A supplemental page table entry. */
 struct page
 {
-    /* Shared between vm/page.c and userprog/process.c. */
+    /* Shared between vm/page.c, userprog/exception.c, and userprog/process.c. */
     void *upage; /* User virtual page. */
     void *kpage; /* Kernel virtual page. */
 
@@ -25,6 +27,12 @@ struct page
     enum page_status status; /* Page state. */
 
     /* Shared between vm/page.c and userprog/process.c. */
+    struct file *file;               /* File to read. */
+    off_t ofs;                       /* File offset. */
+    uint32_t read_bytes, zero_bytes; /* Bytes to read or to set zero. */
+    bool writable;                   /* Whether page is writable. */
+
+    /* Shared between vm/page.c, userprog/exception.c, and userprog/process.c. */
     struct hash_elem sptelem; /* Hash element for supplemental page table. */
 };
 
@@ -32,6 +40,7 @@ struct page
 void page_spt_init(struct hash *);
 
 /* Installation. */
+void page_install_file(struct hash *, void *, struct file *, off_t, uint32_t, uint32_t, bool);
 void page_install_frame(struct hash *, void *, void *);
 
 #endif /* vm/page.h */
