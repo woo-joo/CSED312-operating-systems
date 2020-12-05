@@ -532,6 +532,27 @@ struct file *thread_get_running_file(void)
     return thread_current()->running_file;
 }
 
+#ifdef VM
+
+/* Returns the thread with tid TID. */
+struct thread *thread_get_from_tid(tid_t tid)
+{
+    struct list_elem *e;
+
+    for (e = list_begin(&all_list); e != list_end(&all_list);
+         e = list_next(e))
+    {
+        struct thread *t = list_entry(e, struct thread, allelem);
+
+        if (t->tid == tid)
+            return t;
+    }
+
+    return NULL;
+}
+
+#endif
+
 #endif
 
 /* Compares priority of two list elements A and B. If

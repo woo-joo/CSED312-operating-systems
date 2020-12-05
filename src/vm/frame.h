@@ -6,7 +6,8 @@
 /* Initialization. */
 void frame_init(void);
 
-/* Allocation. */
+/* Allocation, free. */
 void *frame_allocate(enum palloc_flags, void *);
+void frame_free(void *);
 
 #endif /* vm/frame.h */

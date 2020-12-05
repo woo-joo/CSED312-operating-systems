@@ -171,6 +171,9 @@ struct list *thread_get_fdt(void);
 int thread_get_next_fd(void);
 struct file *thread_get_running_file(void);
 void thread_set_running_file(struct file *);
+#ifdef VM
+struct thread *thread_get_from_tid(tid_t);
+#endif
 #endif
 
 list_less_func less_priority;

@@ -6,6 +6,7 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 
 /* A frame table entry. */
 struct frame
@@ -27,6 +28,9 @@ static struct hash frame_table;
 /* A lock for frame table synchronization. The frame
    table is global so that it should be synchronized. */
 static struct lock frame_table_lock;
+
+/* Search. */
+static struct frame *frame_lookup(void *);
 
 /* Helper functions. */
 static hash_hash_func frame_hash;
@@ -53,7 +57,7 @@ void *frame_allocate(enum palloc_flags flags, void *upage)
 
     kpage = palloc_get_page(flags);
 
-    if (!kpage)
+    if (kpage)
     {
         f = (struct frame *)malloc(sizeof *f);
 
@@ -68,6 +72,40 @@ void *frame_allocate(enum palloc_flags flags, void *upage)
     lock_release(&frame_table_lock);
 
     return kpage;
+}
+
+/* Frees a frame associated with KPAGE. */
+void frame_free(void *kpage)
+{
+    struct frame *f;
+
+    ASSERT(is_kernel_vaddr(kpage));
+
+    lock_acquire(&frame_table_lock);
+
+    f = frame_lookup(kpage);
+    if (!f)
+        PANIC("Invalid kpage");
+
+    hash_delete(&frame_table, &f->ftelem);
+    palloc_free_page(f->kpage);
+    pagedir_clear_page(thread_get_from_tid(f->tid)->pagedir, f->upage);
+    free(f);
+
+    lock_release(&frame_table_lock);
+}
+
+/* Returns the frame containing the given virtual KPAGE,
+   or a null pointer if no such frame exists. */
+static struct frame *frame_lookup(void *kpage)
+{
+    struct frame p;
+    struct hash_elem *e;
+
+    p.kpage = kpage;
+    e = hash_find(&frame_table, &p.ftelem);
+
+    return e != NULL ? hash_entry(e, struct frame, ftelem) : NULL;
 }
 
 /* Returns a hash of KPAGE of F that E is embedded inside. */
