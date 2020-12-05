@@ -64,6 +64,75 @@ void page_install_frame(struct hash *spt, void *upage, void *kpage)
         syscall_exit(-1);
 }
 
+/* Loads data into P according to its state. */
+void page_load(struct hash *spt, void *upage)
+{
+    struct page *p;
+    struct lock *filesys_lock;
+    uint32_t *pagedir;
+    void *kpage;
+
+    ASSERT(is_user_vaddr(upage));
+
+    p = page_lookup(spt, upage);
+    if (!p)
+        goto fail;
+
+    kpage = frame_allocate(PAL_USER, upage);
+    if (kpage == NULL)
+        goto fail;
+
+    switch (p->status)
+    {
+    case PAGE_FILE:
+        filesys_lock = syscall_get_filesys_lock();
+
+        lock_acquire(filesys_lock);
+
+        if (file_read_at(p->file, kpage, p->read_bytes, p->ofs) != p->read_bytes)
+        {
+            frame_free(kpage);
+            lock_release(filesys_lock);
+            goto fail;
+        }
+        memset(kpage + p->read_bytes, 0, p->zero_bytes);
+
+        lock_release(filesys_lock);
+
+        break;
+    default:
+        goto fail;
+    }
+
+    pagedir = thread_get_pagedir();
+    if (!pagedir_set_page(pagedir, upage, kpage, p->writable))
+    {
+        frame_free(kpage);
+        goto fail;
+    }
+
+    p->kpage = kpage;
+    p->status = PAGE_FRAME;
+
+    return;
+
+fail:
+    syscall_exit(-1);
+}
+
+/* Returns the page containing the given virtual UPAGE,
+   or a null pointer if no such page exists. */
+struct page *page_lookup(struct hash *spt, void *upage)
+{
+    struct page p;
+    struct hash_elem *e;
+
+    p.upage = upage;
+    e = hash_find(spt, &p.sptelem);
+
+    return e != NULL ? hash_entry(e, struct page, sptelem) : NULL;
+}
+
 /* Returns a hash of UPAGE of P that E is embedded inside. */
 static unsigned int page_hash(const struct hash_elem *e, void *aux UNUSED)
 {
