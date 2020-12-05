@@ -215,6 +215,10 @@ void lock_acquire(struct lock *lock)
 
     sema_down(&lock->semaphore);
     lock->holder = cur;
+
+#ifdef USERPROG
+    list_push_front(thread_get_locks(), &lock->list_elem);
+#endif
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -261,6 +265,17 @@ void lock_release(struct lock *lock)
                     list_remove(de);
                     break;
                 }
+
+#ifdef USERPROG
+    struct list *locks = thread_get_locks();
+
+    for (e = list_begin(locks); e != list_end(locks); e = list_next(e))
+        if (list_entry(e, struct lock, list_elem) == lock)
+        {
+            list_remove(e);
+            break;
+        }
+#endif
 
     lock->holder = NULL;
     sema_up(&lock->semaphore);

@@ -68,3 +68,16 @@ size_t swap_out(void *kpage)
 
     return swap_idx;
 }
+
+/* Turns off the bit in swap table specified with SWAP_IDX. */
+void swap_free(size_t swap_idx)
+{
+    ASSERT(swap_idx < swap_table_size);
+
+    lock_acquire(&swap_table_lock);
+
+    ASSERT(bitmap_test(swap_table, swap_idx));
+    bitmap_set(swap_table, swap_idx, false);
+
+    lock_release(&swap_table_lock);
+}

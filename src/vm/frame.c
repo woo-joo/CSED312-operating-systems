@@ -4,7 +4,6 @@
 #include <hash.h>
 #include "threads/malloc.h"
 #include "threads/synch.h"
-#include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 
@@ -122,12 +121,39 @@ void frame_free(void *kpage)
         lock_release(&frame_table_lock);
 }
 
+/* Deletes all frames with tid TID. Just deletes entries from
+   the frame table. Does not free pages. */
+void frame_delete_all(tid_t tid)
+{
+    struct list_elem *e;
+
+    lock_acquire(&frame_table_lock);
+
+    for (e = list_begin(&frame_clock); e != list_end(&frame_clock);)
+    {
+        struct frame *f = list_entry(e, struct frame, fcelem);
+
+        if (f->tid == tid)
+        {
+            hash_delete(&frame_table, &f->ftelem);
+            e = list_remove(e);
+            free(f);
+        }
+        else
+            e = list_next(e);
+    }
+
+    lock_release(&frame_table_lock);
+}
+
 /* Pins a frame associated with KPAGE. */
 void frame_pin(void *kpage)
 {
     struct frame *f;
+    bool is_held = lock_held_by_current_thread(&frame_table_lock);
 
-    lock_acquire(&frame_table_lock);
+    if (!is_held)
+        lock_acquire(&frame_table_lock);
 
     f = frame_lookup(kpage);
     if (!f)
@@ -135,7 +161,8 @@ void frame_pin(void *kpage)
 
     f->is_pinned = true;
 
-    lock_release(&frame_table_lock);
+    if (!is_held)
+        lock_release(&frame_table_lock);
 }
 
 /* Unpins a frame associated with KPAGE. */
@@ -152,6 +179,11 @@ void frame_unpin(void *kpage)
     f->is_pinned = false;
 
     lock_release(&frame_table_lock);
+}
+
+struct lock *frame_get_frame_table_lock(void)
+{
+    return &frame_table_lock;
 }
 
 /* Returns the frame containing the given virtual KPAGE,

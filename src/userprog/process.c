@@ -197,6 +197,9 @@ void process_exit(void)
     /* Unmap all mmaped files. */
     for (j = 0; j < max_mapid; j++)
         syscall_munmap(j);
+
+    /* Destroy the current process's spt. */
+    page_spt_destroy(thread_get_spt());
 #endif
 
     /* Notify the current process's parent of its termination and
@@ -219,6 +222,9 @@ void process_exit(void)
          that's been freed (and cleared). */
         thread_set_pagedir(NULL);
         pagedir_activate(NULL);
+#ifdef VM
+        frame_delete_all(thread_tid());
+#endif
         pagedir_destroy(pd);
     }
 }
