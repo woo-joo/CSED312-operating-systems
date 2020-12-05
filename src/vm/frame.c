@@ -2,8 +2,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <hash.h>
+#include "threads/malloc.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
 
 /* A frame table entry. */
 struct frame
@@ -35,6 +37,37 @@ void frame_init(void)
 {
     hash_init(&frame_table, frame_hash, frame_less, NULL);
     lock_init(&frame_table_lock);
+}
+
+/* Allocates a frame for UPAGE and returns its address,
+   KPAGE. */
+void *frame_allocate(enum palloc_flags flags, void *upage)
+{
+    struct frame *f;
+    void *kpage;
+
+    ASSERT(flags & PAL_USER);
+    ASSERT(is_user_vaddr(upage));
+
+    lock_acquire(&frame_table_lock);
+
+    kpage = palloc_get_page(flags);
+
+    if (!kpage)
+    {
+        f = (struct frame *)malloc(sizeof *f);
+
+        f->kpage = kpage;
+        f->upage = upage;
+
+        f->tid = thread_tid();
+
+        hash_insert(&frame_table, &f->ftelem);
+    }
+
+    lock_release(&frame_table_lock);
+
+    return kpage;
 }
 
 /* Returns a hash of KPAGE of F that E is embedded inside. */
