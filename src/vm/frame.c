@@ -19,6 +19,9 @@ struct frame
     tid_t tid; /* Id of thread occupying frame. */
 
     /* Shared between vm/frame.c, userprog/process.c, and vm/page.c. */
+    bool is_pinned; /* Whether frame is pinned. */
+
+    /* Shared between vm/frame.c, userprog/process.c, and vm/page.c. */
     struct hash_elem ftelem; /* Hash element for frame table. */
     struct list_elem fcelem; /* List element for frame clock. */
 };
@@ -84,6 +87,8 @@ void *frame_allocate(enum palloc_flags flags, void *upage)
 
     f->tid = thread_tid();
 
+    f->is_pinned = true;
+
     hash_insert(&frame_table, &f->ftelem);
     list_push_back(&frame_clock, &f->fcelem);
 
@@ -115,6 +120,38 @@ void frame_free(void *kpage)
 
     if (!is_held)
         lock_release(&frame_table_lock);
+}
+
+/* Pins a frame associated with KPAGE. */
+void frame_pin(void *kpage)
+{
+    struct frame *f;
+
+    lock_acquire(&frame_table_lock);
+
+    f = frame_lookup(kpage);
+    if (!f)
+        PANIC("Invalid kpage");
+
+    f->is_pinned = true;
+
+    lock_release(&frame_table_lock);
+}
+
+/* Unpins a frame associated with KPAGE. */
+void frame_unpin(void *kpage)
+{
+    struct frame *f;
+
+    lock_acquire(&frame_table_lock);
+
+    f = frame_lookup(kpage);
+    if (!f)
+        PANIC("Invalid kpage");
+
+    f->is_pinned = false;
+
+    lock_release(&frame_table_lock);
 }
 
 /* Returns the frame containing the given virtual KPAGE,
@@ -159,10 +196,11 @@ static struct frame *frame_find_victim(void)
         if (!t)
             PANIC("Invalid tid");
 
-        if (!pagedir_is_accessed(t->pagedir, f->upage))
-            return f;
-
-        pagedir_set_accessed(t->pagedir, f->upage, false);
+        if (!f->is_pinned)
+            if (!pagedir_is_accessed(t->pagedir, f->upage))
+                return f;
+            else
+                pagedir_set_accessed(t->pagedir, f->upage, false);
     }
 
     PANIC("Cannot find victim");

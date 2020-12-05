@@ -113,10 +113,12 @@ void page_delete(struct hash *spt, void *upage, bool is_dirty)
     case PAGE_ZERO:
         break;
     case PAGE_SWAP:
-        page_load(spt, upage);
+        page_load(spt, upage, false);
         is_dirty = true;
     case PAGE_FRAME:
     {
+        frame_pin(p->kpage);
+
         if (p->file && (p->is_dirty || is_dirty))
             file_write_at(p->file, upage, p->read_bytes, p->ofs);
 
@@ -161,7 +163,7 @@ void page_evict(struct hash *spt, void *upage, bool is_dirty)
 }
 
 /* Loads data into P according to its state. */
-void page_load(struct hash *spt, void *upage)
+void page_load(struct hash *spt, void *upage, bool unpin)
 {
     struct page *p;
     struct lock *filesys_lock;
@@ -218,6 +220,9 @@ void page_load(struct hash *spt, void *upage)
 
     p->kpage = kpage;
     p->status = PAGE_FRAME;
+
+    if (unpin)
+        frame_unpin(kpage);
 
     return;
 
