@@ -3,8 +3,10 @@
 #include <debug.h>
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 #include "userprog/syscall.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 /* Helper functions. */
 static hash_hash_func page_hash;
@@ -38,6 +40,9 @@ void page_install_file(struct hash *spt, void *upage, struct file *file, off_t o
     p->zero_bytes = zero_bytes;
     p->writable = writable;
 
+    p->swap_idx = -1;
+    p->is_dirty = false;
+
     if (hash_insert(spt, &p->sptelem))
         syscall_exit(-1);
 }
@@ -58,6 +63,9 @@ void page_install_zero(struct hash *spt, void *upage)
 
     p->file = NULL;
     p->writable = true;
+
+    p->swap_idx = -1;
+    p->is_dirty = false;
 
     if (hash_insert(spt, &p->sptelem))
         syscall_exit(-1);
@@ -80,6 +88,9 @@ void page_install_frame(struct hash *spt, void *upage, void *kpage)
 
     p->file = NULL;
     p->writable = true;
+
+    p->swap_idx = -1;
+    p->is_dirty = false;
 
     if (hash_insert(spt, &p->sptelem))
         syscall_exit(-1);

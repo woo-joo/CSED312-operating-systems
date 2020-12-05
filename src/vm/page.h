@@ -19,20 +19,26 @@ enum page_status
 /* A supplemental page table entry. */
 struct page
 {
-    /* Shared between vm/page.c, userprog/exception.c, and userprog/process.c. */
+    /* Shared between vm/page.c, userprog/exception.c,
+     userprog/process.c, and userprog/syscall.c. */
     void *upage; /* User virtual page. */
     void *kpage; /* Kernel virtual page. */
 
     /* Owned by page.c. */
     enum page_status status; /* Page state. */
 
-    /* Shared between vm/page.c and userprog/process.c. */
+    /* Shared between vm/page.c, userprog/process.c, and userprog/syscall.c. */
     struct file *file;               /* File to read. */
     off_t ofs;                       /* File offset. */
     uint32_t read_bytes, zero_bytes; /* Bytes to read or to set zero. */
     bool writable;                   /* Whether page is writable. */
 
-    /* Shared between vm/page.c, userprog/exception.c, and userprog/process.c. */
+    /* Shared between page.c and swap.c. */
+    size_t swap_idx; /* Swap table index. */
+    bool is_dirty;   /* Whether page have been evicted. */
+
+    /* Shared between vm/page.c, userprog/exception.c,
+     userprog/process.c, and userprog/syscall.c. */
     struct hash_elem sptelem; /* Hash element for supplemental page table. */
 };
 
