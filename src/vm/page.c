@@ -3,8 +3,10 @@
 #include <debug.h>
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 #include "userprog/syscall.h"
 #include "vm/frame.h"
+#include "vm/swap.h"
 
 /* Helper functions. */
 static hash_hash_func page_hash;
@@ -38,6 +40,9 @@ void page_install_file(struct hash *spt, void *upage, struct file *file, off_t o
     p->zero_bytes = zero_bytes;
     p->writable = writable;
 
+    p->swap_idx = -1;
+    p->is_dirty = false;
+
     if (hash_insert(spt, &p->sptelem))
         syscall_exit(-1);
 }
@@ -58,6 +63,9 @@ void page_install_zero(struct hash *spt, void *upage)
 
     p->file = NULL;
     p->writable = true;
+
+    p->swap_idx = -1;
+    p->is_dirty = false;
 
     if (hash_insert(spt, &p->sptelem))
         syscall_exit(-1);
@@ -81,6 +89,9 @@ void page_install_frame(struct hash *spt, void *upage, void *kpage)
     p->file = NULL;
     p->writable = true;
 
+    p->swap_idx = -1;
+    p->is_dirty = false;
+
     if (hash_insert(spt, &p->sptelem))
         syscall_exit(-1);
 }
@@ -101,9 +112,12 @@ void page_delete(struct hash *spt, void *upage, bool is_dirty)
     case PAGE_FILE:
     case PAGE_ZERO:
         break;
+    case PAGE_SWAP:
+        page_load(spt, upage);
+        is_dirty = true;
     case PAGE_FRAME:
     {
-        if (p->file && is_dirty)
+        if (p->file && (p->is_dirty || is_dirty))
             file_write_at(p->file, upage, p->read_bytes, p->ofs);
 
         frame_free(p->kpage);
@@ -116,6 +130,34 @@ void page_delete(struct hash *spt, void *upage, bool is_dirty)
 
     hash_delete(spt, &p->sptelem);
     free(p);
+}
+
+/* Evicts page. Status is set properly. */
+void page_evict(struct hash *spt, void *upage, bool is_dirty)
+{
+    struct page *p;
+
+    ASSERT(is_user_vaddr(upage));
+
+    p = page_lookup(spt, upage);
+    if (!p)
+        syscall_exit(-1);
+
+    ASSERT(p->status == PAGE_FRAME);
+    ASSERT(p->kpage != NULL);
+
+    if (p->is_dirty || is_dirty)
+    {
+        p->status = PAGE_SWAP;
+        p->swap_idx = swap_out(p->kpage);
+        p->is_dirty = true;
+    }
+    else if (p->file)
+        p->status = PAGE_FILE;
+    else
+        p->status = PAGE_ZERO;
+
+    p->kpage = NULL;
 }
 
 /* Loads data into P according to its state. */
@@ -156,6 +198,11 @@ void page_load(struct hash *spt, void *upage)
         break;
     case PAGE_ZERO:
         memset(kpage, 0, PGSIZE);
+
+        break;
+    case PAGE_SWAP:
+        swap_in(p->swap_idx, kpage);
+        p->swap_idx = -1;
 
         break;
     default:
