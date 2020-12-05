@@ -42,6 +42,27 @@ void page_install_file(struct hash *spt, void *upage, struct file *file, off_t o
         syscall_exit(-1);
 }
 
+/* Adds a page with status PAGE_ZERO to SPT. */
+void page_install_zero(struct hash *spt, void *upage)
+{
+    struct page *p;
+
+    ASSERT(is_user_vaddr(upage));
+
+    p = (struct page *)malloc(sizeof *p);
+
+    p->upage = upage;
+    p->kpage = NULL;
+
+    p->status = PAGE_ZERO;
+
+    p->file = NULL;
+    p->writable = true;
+
+    if (hash_insert(spt, &p->sptelem))
+        syscall_exit(-1);
+}
+
 /* Adds a page with status PAGE_FRAME to SPT. */
 void page_install_frame(struct hash *spt, void *upage, void *kpage)
 {

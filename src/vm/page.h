@@ -41,6 +41,7 @@ void page_spt_init(struct hash *);
 
 /* Installation. */
 void page_install_file(struct hash *, void *, struct file *, off_t, uint32_t, uint32_t, bool);
+void page_install_zero(struct hash *, void *);
 void page_install_frame(struct hash *, void *, void *);
 
 /* Load, search. */
