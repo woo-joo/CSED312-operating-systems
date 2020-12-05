@@ -187,7 +187,7 @@ page_fault(struct intr_frame *f)
             page_install_zero(spt, upage);
 
     /* Lazy loading. If fails, kill the user process. */
-    page_load(spt, upage);
+    page_load(spt, upage, true);
 
     if (is_held)
         lock_acquire(filesys_lock);

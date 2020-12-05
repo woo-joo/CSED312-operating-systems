@@ -636,6 +636,7 @@ setup_stack(void **esp)
             struct hash *spt = thread_get_spt();
 
             page_install_frame(spt, PHYS_BASE - PGSIZE, kpage);
+            frame_unpin(kpage);
 #endif
             *esp = PHYS_BASE;
         }

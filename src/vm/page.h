@@ -53,7 +53,7 @@ void page_delete(struct hash *, void *, bool);
 
 /* Eviction, load, search. */
 void page_evict(struct hash *, void *, bool);
-void page_load(struct hash *, void *);
+void page_load(struct hash *, void *, bool);
 struct page *page_lookup(struct hash *, void *);
 
 #endif /* vm/page.h */
