@@ -2,7 +2,9 @@
 #define THREADS_THREAD_H
 
 #include <debug.h>
+#ifdef VM
 #include <hash.h>
+#endif
 #include <list.h>
 #include <stdint.h>
 
@@ -19,6 +21,12 @@ enum thread_status
    You can redefine this to whatever type you like. */
 typedef int tid_t;
 #define TID_ERROR ((tid_t)-1) /* Error value for tid_t. */
+
+#ifdef VM
+/* Map region identifier. */
+typedef int mapid_t;
+#define MAP_FAILED ((mapid_t)-1)
+#endif
 
 /* Thread priorities. */
 #define PRI_MIN 0      /* Lowest priority. */
@@ -122,6 +130,10 @@ struct thread
 
     /* Shared between userprog/exception.c and userprog/syscall.c. */
     void *esp; /* Saved user stack pointer. */
+
+    /* Shared between userprog/process.c and userprog/syscall.c. */
+    struct list mdt;    /* Mmap descriptor table. */
+    mapid_t next_mapid; /* Memory mapping identifier for next mmap. */
 #endif
 #endif
 
@@ -185,6 +197,8 @@ struct thread *thread_get_from_tid(tid_t);
 struct hash *thread_get_spt(void);
 void *thread_get_esp(void);
 void thread_set_esp(void *);
+struct list *thread_get_mdt(void);
+mapid_t thread_get_next_mapid(void);
 #endif
 #endif
 

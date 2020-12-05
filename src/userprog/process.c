@@ -275,6 +275,27 @@ struct file_descriptor_entry *process_get_fde(int fd)
     return NULL;
 }
 
+#ifdef VM
+
+/* Returns the current process's mmap descriptor entry with mapid MAPID. */
+struct mmap_descriptor_entry *process_get_mde(mapid_t mapid)
+{
+    struct list *mdt = thread_get_mdt();
+    struct list_elem *e;
+
+    for (e = list_begin(mdt); e != list_end(mdt); e = list_next(e))
+    {
+        struct mmap_descriptor_entry *mde = list_entry(e, struct mmap_descriptor_entry, mdtelem);
+
+        if (mde->mapid == mapid)
+            return mde;
+    }
+
+    return NULL;
+}
+
+#endif
+
 /* We load ELF binaries.  The following definitions are taken
    from the ELF specification, [ELF1], more-or-less verbatim.  */
 

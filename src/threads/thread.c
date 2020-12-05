@@ -569,6 +569,19 @@ void *thread_get_esp(void)
     return thread_current()->esp;
 }
 
+/* Returns the current thread's mdt. */
+struct list *thread_get_mdt(void)
+{
+    return &thread_current()->mdt;
+}
+
+/* Returns the current thread's next_mapid and increments
+   it by 1. */
+mapid_t thread_get_next_mapid(void)
+{
+    return thread_current()->next_mapid++;
+}
+
 #endif
 
 #endif
@@ -693,6 +706,10 @@ init_thread(struct thread *t, const char *name, int priority)
     list_init(&t->children);
     list_init(&t->fdt);
     t->next_fd = 2;
+#ifdef VM
+    list_init(&t->mdt);
+    t->next_mapid = 0;
+#endif
 #endif
     t->magic = THREAD_MAGIC;
 
