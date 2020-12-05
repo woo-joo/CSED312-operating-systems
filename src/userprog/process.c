@@ -176,23 +176,34 @@ void process_exit(void)
     struct lock *filesys_lock = syscall_get_filesys_lock();
     uint32_t *pd;
     int max_fd = thread_get_next_fd(), i;
+#ifdef VM
+    mapid_t max_mapid = thread_get_next_mapid(), j;
+#endif
 
     /* Set exit flag, remove all of the current process's exited children,
-     close all of its files, and notify its parent of its termination.
-     Finally, free its page if it is orphaned. */
+     and close all of its files. */
     pcb->is_exited = true;
     for (e = list_begin(children); e != list_end(children); e = list_next(e))
         process_remove_child(list_entry(e, struct process, childelem));
     for (i = 2; i < max_fd; i++)
         syscall_close(i);
-    sema_up(&pcb->exit_sema);
-    if (pcb && !pcb->parent)
-        palloc_free_page(pcb);
 
     /* Close the running file. */
     lock_acquire(filesys_lock);
     file_close(thread_get_running_file());
     lock_release(filesys_lock);
+
+#ifdef VM
+    /* Unmap all mmaped files. */
+    for (j = 0; j < max_mapid; j++)
+        syscall_munmap(j);
+#endif
+
+    /* Notify the current process's parent of its termination and
+     free its page if it is orphaned. */
+    sema_up(&pcb->exit_sema);
+    if (pcb && !pcb->parent)
+        palloc_free_page(pcb);
 
     /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -274,6 +285,27 @@ struct file_descriptor_entry *process_get_fde(int fd)
 
     return NULL;
 }
+
+#ifdef VM
+
+/* Returns the current process's mmap descriptor entry with mapid MAPID. */
+struct mmap_descriptor_entry *process_get_mde(mapid_t mapid)
+{
+    struct list *mdt = thread_get_mdt();
+    struct list_elem *e;
+
+    for (e = list_begin(mdt); e != list_end(mdt); e = list_next(e))
+    {
+        struct mmap_descriptor_entry *mde = list_entry(e, struct mmap_descriptor_entry, mdtelem);
+
+        if (mde->mapid == mapid)
+            return mde;
+    }
+
+    return NULL;
+}
+
+#endif
 
 /* We load ELF binaries.  The following definitions are taken
    from the ELF specification, [ELF1], more-or-less verbatim.  */

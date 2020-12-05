@@ -85,6 +85,39 @@ void page_install_frame(struct hash *spt, void *upage, void *kpage)
         syscall_exit(-1);
 }
 
+/* Deletes a page associated with UPAGE from SPT. */
+void page_delete(struct hash *spt, void *upage, bool is_dirty)
+{
+    struct page *p;
+
+    ASSERT(is_user_vaddr(upage));
+
+    p = page_lookup(spt, upage);
+    if (!p)
+        syscall_exit(-1);
+
+    switch (p->status)
+    {
+    case PAGE_FILE:
+    case PAGE_ZERO:
+        break;
+    case PAGE_FRAME:
+    {
+        if (p->file && is_dirty)
+            file_write_at(p->file, upage, p->read_bytes, p->ofs);
+
+        frame_free(p->kpage);
+
+        break;
+    }
+    default:
+        syscall_exit(-1);
+    }
+
+    hash_delete(spt, &p->sptelem);
+    free(p);
+}
+
 /* Loads data into P according to its state. */
 void page_load(struct hash *spt, void *upage)
 {
