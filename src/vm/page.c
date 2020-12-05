@@ -11,11 +11,22 @@
 /* Helper functions. */
 static hash_hash_func page_hash;
 static hash_less_func page_less;
+static hash_action_func page_destructor;
 
 /* Initializes supplemental page table SPT. */
 void page_spt_init(struct hash *spt)
 {
     hash_init(spt, page_hash, page_less, NULL);
+}
+
+/* Destroys supplemental page table SPT. */
+void page_spt_destroy(struct hash *spt)
+{
+    struct lock *frame_table_lock = frame_get_frame_table_lock();
+
+    lock_acquire(frame_table_lock);
+    hash_destroy(spt, page_destructor);
+    lock_release(frame_table_lock);
 }
 
 /* Adds a page with status PAGE_FILE to SPT. */
@@ -260,4 +271,18 @@ static bool page_less(const struct hash_elem *a, const struct hash_elem *b, void
     struct page *b_p = hash_entry(b, struct page, sptelem);
 
     return a_p->upage < b_p->upage;
+}
+
+/* Destroys a page. */
+static void page_destructor(struct hash_elem *e, void *aux UNUSED)
+{
+    struct page *p;
+
+    p = hash_entry(e, struct page, sptelem);
+
+    if (p->status == PAGE_SWAP)
+        swap_free(p->swap_idx);
+    else if (p->status == PAGE_FRAME)
+        frame_pin(p->kpage);
+    free(p);
 }

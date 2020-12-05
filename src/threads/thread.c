@@ -584,6 +584,12 @@ mapid_t thread_get_next_mapid(void)
 
 #endif
 
+/* Returns the current thread's locks. */
+struct list *thread_get_locks(void)
+{
+    return &thread_current()->locks;
+}
+
 #endif
 
 /* Compares priority of two list elements A and B. If
@@ -710,6 +716,7 @@ init_thread(struct thread *t, const char *name, int priority)
     list_init(&t->mdt);
     t->next_mapid = 0;
 #endif
+    list_init(&t->locks);
 #endif
     t->magic = THREAD_MAGIC;
 

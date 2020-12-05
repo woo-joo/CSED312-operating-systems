@@ -9,5 +9,6 @@ void swap_init(void);
 /* Swap. */
 void swap_in(size_t, void *);
 size_t swap_out(void *);
+void swap_free(size_t);
 
 #endif /* vm/swap.h */

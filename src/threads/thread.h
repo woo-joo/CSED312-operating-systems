@@ -135,6 +135,9 @@ struct thread
     struct list mdt;    /* Mmap descriptor table. */
     mapid_t next_mapid; /* Memory mapping identifier for next mmap. */
 #endif
+
+    /* Shared between threads/synch.c and userprog/process.c. */
+    struct list locks; /* List of locks acquired. */
 #endif
 
     /* Owned by thread.c. */
@@ -200,6 +203,7 @@ void thread_set_esp(void *);
 struct list *thread_get_mdt(void);
 mapid_t thread_get_next_mapid(void);
 #endif
+struct list *thread_get_locks(void);
 #endif
 
 list_less_func less_priority;
