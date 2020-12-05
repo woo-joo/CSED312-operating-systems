@@ -212,6 +212,13 @@ syscall_handler(struct intr_frame *f)
 static void
 check_vaddr(const void *vaddr)
 {
+#ifdef VM
+    if (!vaddr || !is_user_vaddr(vaddr))
+        syscall_exit(-1);
+
+    return;
+#endif
+
     if (!vaddr || !is_user_vaddr(vaddr) ||
         !pagedir_get_page(thread_get_pagedir(), vaddr))
         syscall_exit(-1);
