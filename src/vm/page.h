@@ -51,7 +51,8 @@ void page_install_zero(struct hash *, void *);
 void page_install_frame(struct hash *, void *, void *);
 void page_delete(struct hash *, void *, bool);
 
-/* Load, search. */
+/* Eviction, load, search. */
+void page_evict(struct hash *, void *, bool);
 void page_load(struct hash *, void *);
 struct page *page_lookup(struct hash *, void *);
 
