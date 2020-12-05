@@ -2,6 +2,7 @@
 #define THREADS_THREAD_H
 
 #include <debug.h>
+#include <hash.h>
 #include <list.h>
 #include <stdint.h>
 
@@ -114,6 +115,11 @@ struct thread
     struct list fdt;           /* List of file descriptor entries. */
     int next_fd;               /* File descriptor for next file. */
     struct file *running_file; /* Currently running file. */
+
+#ifdef VM
+    /* Shared between userprog/process.c and vm/page.c. */
+    struct hash spt; /* Supplemental page table. */
+#endif
 #endif
 
     /* Owned by thread.c. */
@@ -173,6 +179,7 @@ struct file *thread_get_running_file(void);
 void thread_set_running_file(struct file *);
 #ifdef VM
 struct thread *thread_get_from_tid(tid_t);
+struct hash *thread_get_spt(void);
 #endif
 #endif
 

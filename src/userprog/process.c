@@ -20,6 +20,7 @@
 #include "threads/vaddr.h"
 #ifdef VM
 #include "vm/frame.h"
+#include "vm/page.h"
 #endif
 
 #ifndef VM
@@ -101,6 +102,11 @@ start_process(void *pcb_)
 
     /* Set the current process's pcb to PCB. */
     thread_set_pcb(pcb);
+
+    /* Initialize the current process's spt. */
+#ifdef VM
+    page_spt_init(thread_get_spt());
+#endif
 
     /* Initialize interrupt frame. */
     memset(&if_, 0, sizeof if_);
@@ -519,10 +525,17 @@ static bool
 load_segment(struct file *file, off_t ofs, uint8_t *upage,
              uint32_t read_bytes, uint32_t zero_bytes, bool writable)
 {
+#ifdef VM
+    struct hash *spt;
+#endif
+
     ASSERT((read_bytes + zero_bytes) % PGSIZE == 0);
     ASSERT(pg_ofs(upage) == 0);
     ASSERT(ofs % PGSIZE == 0);
 
+#ifdef VM
+    spt = thread_get_spt();
+#endif
     file_seek(file, ofs);
     while (read_bytes > 0 || zero_bytes > 0)
     {
@@ -552,6 +565,11 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
             return false;
         }
 
+#ifdef VM
+        /* Install supplemental page table entry. */
+        page_install_frame(spt, upage, kpage);
+#endif
+
         /* Advance. */
         read_bytes -= page_read_bytes;
         zero_bytes -= page_zero_bytes;
@@ -573,7 +591,14 @@ setup_stack(void **esp)
     {
         success = install_page(((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true);
         if (success)
+        {
+#ifdef VM
+            struct hash *spt = thread_get_spt();
+
+            page_install_frame(spt, PHYS_BASE - PGSIZE, kpage);
+#endif
             *esp = PHYS_BASE;
+        }
         else
             frame_free(kpage);
     }
