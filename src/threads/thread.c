@@ -551,6 +551,12 @@ struct thread *thread_get_from_tid(tid_t tid)
     return NULL;
 }
 
+/* Returns the current thread's spt. */
+struct hash *thread_get_spt(void)
+{
+    return &thread_current()->spt;
+}
+
 #endif
 
 #endif
