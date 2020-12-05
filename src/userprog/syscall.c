@@ -226,6 +226,17 @@ syscall_handler(struct intr_frame *f)
         f->eax = (uint32_t)syscall_mmap(fd, addr);
         break;
     }
+    case SYS_MUNMAP:
+    {
+        mapid_t mapid;
+
+        check_vaddr(esp + sizeof(uintptr_t));
+        check_vaddr(esp + 2 * sizeof(uintptr_t) - 1);
+        mapid = *(int *)(esp + sizeof(uintptr_t));
+
+        syscall_munmap(mapid);
+        break;
+    }
 #endif
     default:
         syscall_exit(-1);
@@ -544,6 +555,37 @@ static mapid_t syscall_mmap(int fd, void *addr)
 fail:
     lock_release(&filesys_lock);
     return MAP_FAILED;
+}
+
+/* Handles munmap() system call. */
+void syscall_munmap(mapid_t mapid)
+{
+    struct hash *spt;
+    struct mmap_descriptor_entry *mde;
+    off_t size, ofs;
+    uint32_t *pd;
+
+    mde = process_get_mde(mapid);
+    if (!mde)
+        return;
+
+    lock_acquire(&filesys_lock);
+
+    size = mde->size;
+    spt = thread_get_spt();
+    pd = thread_get_pagedir();
+    for (ofs = 0; ofs < size; ofs += PGSIZE)
+    {
+        bool is_dirty = pagedir_is_dirty(pd, mde->upage + ofs);
+
+        page_delete(spt, mde->upage + ofs, is_dirty);
+    }
+
+    file_close(mde->file);
+    list_remove(&mde->mdtelem);
+    free(mde);
+
+    lock_release(&filesys_lock);
 }
 
 #endif
