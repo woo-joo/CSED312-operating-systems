@@ -557,6 +557,18 @@ struct hash *thread_get_spt(void)
     return &thread_current()->spt;
 }
 
+/* Sets the current thread's esp to NEW_ESP. */
+void thread_set_esp(void *new_esp)
+{
+    thread_current()->esp = new_esp;
+}
+
+/* Returns the current thread's esp. */
+void *thread_get_esp(void)
+{
+    return thread_current()->esp;
+}
+
 #endif
 
 #endif

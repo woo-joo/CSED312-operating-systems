@@ -121,6 +121,10 @@ void page_load(struct hash *spt, void *upage)
         lock_release(filesys_lock);
 
         break;
+    case PAGE_ZERO:
+        memset(kpage, 0, PGSIZE);
+
+        break;
     default:
         goto fail;
     }

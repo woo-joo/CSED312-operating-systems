@@ -50,6 +50,9 @@ syscall_handler(struct intr_frame *f)
     check_vaddr(esp);
     check_vaddr(esp + sizeof(uintptr_t) - 1);
     syscall_num = *(int *)esp;
+#ifdef VM
+    thread_set_esp(esp);
+#endif
 
     switch (syscall_num)
     {
