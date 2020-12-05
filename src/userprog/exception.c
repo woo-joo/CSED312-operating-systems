@@ -12,6 +12,11 @@
 #include "vm/page.h"
 #endif
 
+#ifdef VM
+/* Stack grows up to 8 MB. */
+#define MAX_STACK_SIZE (1 << 23)
+#endif
+
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
@@ -132,6 +137,7 @@ page_fault(struct intr_frame *f)
     struct lock *filesys_lock;
     bool is_held;
     void *upage;
+    void *esp;
 #endif
     bool not_present; /* True: not-present page, false: writing r/o page. */
     bool write;       /* True: access was write, false: access was read. */
@@ -173,6 +179,12 @@ page_fault(struct intr_frame *f)
      access is tried on read-only page, the access is invalid. */
     if (is_kernel_vaddr(fault_addr) || !not_present)
         syscall_exit(-1);
+
+    /* Stack growth. */
+    esp = user ? f->esp : thread_get_esp();
+    if (esp - 32 <= fault_addr && PHYS_BASE - MAX_STACK_SIZE <= fault_addr)
+        if (!page_lookup(spt, upage))
+            page_install_zero(spt, upage);
 
     /* Lazy loading. If fails, kill the user process. */
     page_load(spt, upage);

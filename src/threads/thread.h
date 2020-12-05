@@ -119,6 +119,9 @@ struct thread
 #ifdef VM
     /* Shared between userprog/process.c and vm/page.c. */
     struct hash spt; /* Supplemental page table. */
+
+    /* Shared between userprog/exception.c and userprog/syscall.c. */
+    void *esp; /* Saved user stack pointer. */
 #endif
 #endif
 
@@ -180,6 +183,8 @@ void thread_set_running_file(struct file *);
 #ifdef VM
 struct thread *thread_get_from_tid(tid_t);
 struct hash *thread_get_spt(void);
+void *thread_get_esp(void);
+void thread_set_esp(void *);
 #endif
 #endif
 
