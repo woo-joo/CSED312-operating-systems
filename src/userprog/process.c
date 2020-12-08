@@ -172,6 +172,7 @@ void process_exit(void)
     struct thread *cur = thread_current();
     struct process *pcb = thread_get_pcb();
     struct list *children = thread_get_children();
+    struct list *locks = thread_get_locks();
     struct list_elem *e;
     struct lock *filesys_lock = syscall_get_filesys_lock();
     uint32_t *pd;
@@ -192,6 +193,10 @@ void process_exit(void)
     lock_acquire(filesys_lock);
     file_close(thread_get_running_file());
     lock_release(filesys_lock);
+
+    /* Release all of the current process's locks. */
+    for (e = list_begin(locks); e != list_end(locks); e = list_next(e))
+        lock_release(list_entry(e, struct lock, list_elem));
 
 #ifdef VM
     /* Unmap all mmaped files. */

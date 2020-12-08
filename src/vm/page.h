@@ -35,7 +35,7 @@ struct page
 
     /* Shared between page.c and swap.c. */
     size_t swap_idx; /* Swap table index. */
-    bool is_dirty;   /* Whether page have been evicted. */
+    bool is_dirty;   /* Whether page have ever been evicted. */
 
     /* Shared between vm/page.c, userprog/exception.c,
      userprog/process.c, and userprog/syscall.c. */
