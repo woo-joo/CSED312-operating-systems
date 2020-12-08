@@ -532,6 +532,64 @@ struct file *thread_get_running_file(void)
     return thread_current()->running_file;
 }
 
+#ifdef VM
+
+/* Returns the thread with tid TID. */
+struct thread *thread_get_from_tid(tid_t tid)
+{
+    struct list_elem *e;
+
+    for (e = list_begin(&all_list); e != list_end(&all_list);
+         e = list_next(e))
+    {
+        struct thread *t = list_entry(e, struct thread, allelem);
+
+        if (t->tid == tid)
+            return t;
+    }
+
+    return NULL;
+}
+
+/* Returns the current thread's spt. */
+struct hash *thread_get_spt(void)
+{
+    return &thread_current()->spt;
+}
+
+/* Sets the current thread's esp to NEW_ESP. */
+void thread_set_esp(void *new_esp)
+{
+    thread_current()->esp = new_esp;
+}
+
+/* Returns the current thread's esp. */
+void *thread_get_esp(void)
+{
+    return thread_current()->esp;
+}
+
+/* Returns the current thread's mdt. */
+struct list *thread_get_mdt(void)
+{
+    return &thread_current()->mdt;
+}
+
+/* Returns the current thread's next_mapid and increments
+   it by 1. */
+mapid_t thread_get_next_mapid(void)
+{
+    return thread_current()->next_mapid++;
+}
+
+#endif
+
+/* Returns the current thread's locks. */
+struct list *thread_get_locks(void)
+{
+    return &thread_current()->locks;
+}
+
 #endif
 
 /* Compares priority of two list elements A and B. If
@@ -654,6 +712,11 @@ init_thread(struct thread *t, const char *name, int priority)
     list_init(&t->children);
     list_init(&t->fdt);
     t->next_fd = 2;
+#ifdef VM
+    list_init(&t->mdt);
+    t->next_mapid = 0;
+#endif
+    list_init(&t->locks);
 #endif
     t->magic = THREAD_MAGIC;
 

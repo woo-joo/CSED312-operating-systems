@@ -2,6 +2,9 @@
 #define THREADS_THREAD_H
 
 #include <debug.h>
+#ifdef VM
+#include <hash.h>
+#endif
 #include <list.h>
 #include <stdint.h>
 
@@ -18,6 +21,12 @@ enum thread_status
    You can redefine this to whatever type you like. */
 typedef int tid_t;
 #define TID_ERROR ((tid_t)-1) /* Error value for tid_t. */
+
+#ifdef VM
+/* Map region identifier. */
+typedef int mapid_t;
+#define MAP_FAILED ((mapid_t)-1)
+#endif
 
 /* Thread priorities. */
 #define PRI_MIN 0      /* Lowest priority. */
@@ -114,6 +123,21 @@ struct thread
     struct list fdt;           /* List of file descriptor entries. */
     int next_fd;               /* File descriptor for next file. */
     struct file *running_file; /* Currently running file. */
+
+#ifdef VM
+    /* Shared between userprog/process.c and vm/page.c. */
+    struct hash spt; /* Supplemental page table. */
+
+    /* Shared between userprog/exception.c and userprog/syscall.c. */
+    void *esp; /* Saved user stack pointer. */
+
+    /* Shared between userprog/process.c and userprog/syscall.c. */
+    struct list mdt;    /* Mmap descriptor table. */
+    mapid_t next_mapid; /* Memory mapping identifier for next mmap. */
+#endif
+
+    /* Shared between threads/synch.c and userprog/process.c. */
+    struct list locks; /* List of locks acquired. */
 #endif
 
     /* Owned by thread.c. */
@@ -171,6 +195,15 @@ struct list *thread_get_fdt(void);
 int thread_get_next_fd(void);
 struct file *thread_get_running_file(void);
 void thread_set_running_file(struct file *);
+#ifdef VM
+struct thread *thread_get_from_tid(tid_t);
+struct hash *thread_get_spt(void);
+void *thread_get_esp(void);
+void thread_set_esp(void *);
+struct list *thread_get_mdt(void);
+mapid_t thread_get_next_mapid(void);
+#endif
+struct list *thread_get_locks(void);
 #endif
 
 list_less_func less_priority;

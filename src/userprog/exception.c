@@ -5,6 +5,17 @@
 #include "userprog/syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#ifdef VM
+#include "threads/synch.h"
+#include "threads/vaddr.h"
+#include "vm/frame.h"
+#include "vm/page.h"
+#endif
+
+#ifdef VM
+/* Stack grows up to 8 MB. */
+#define MAX_STACK_SIZE (1 << 23)
+#endif
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -121,6 +132,13 @@ kill(struct intr_frame *f)
 static void
 page_fault(struct intr_frame *f)
 {
+#ifdef VM
+    struct hash *spt;
+    struct lock *filesys_lock;
+    bool is_held;
+    void *upage;
+    void *esp;
+#endif
     bool not_present; /* True: not-present page, false: writing r/o page. */
     bool write;       /* True: access was write, false: access was read. */
     bool user;        /* True: access by user, false: access by kernel. */
@@ -148,10 +166,33 @@ page_fault(struct intr_frame *f)
     write = (f->error_code & PF_W) != 0;
     user = (f->error_code & PF_U) != 0;
 
-    /* If page fault occurs in user mode, terminates the current
-     process. */
-    if (user)
+#ifdef VM
+    spt = thread_get_spt();
+    filesys_lock = syscall_get_filesys_lock();
+    is_held = lock_held_by_current_thread(filesys_lock);
+    upage = pg_round_down(fault_addr);
+
+    if (is_held)
+        lock_release(filesys_lock);
+
+    /* If page fault occurs at kernel virtual address or writing
+     access is tried on read-only page, the access is invalid. */
+    if (is_kernel_vaddr(fault_addr) || !not_present)
         syscall_exit(-1);
+
+    /* Stack growth. */
+    esp = user ? f->esp : thread_get_esp();
+    if (esp - 32 <= fault_addr && PHYS_BASE - MAX_STACK_SIZE <= fault_addr)
+        if (!page_lookup(spt, upage))
+            page_install_zero(spt, upage);
+
+    /* Lazy loading. If fails, kill the user process. */
+    page_load(spt, upage, true);
+
+    if (is_held)
+        lock_acquire(filesys_lock);
+    return;
+#endif
 
     /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

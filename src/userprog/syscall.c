@@ -13,6 +13,10 @@
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
+#ifdef VM
+#include "threads/malloc.h"
+#include "vm/page.h"
+#endif
 
 struct lock filesys_lock;
 
@@ -31,6 +35,9 @@ static int syscall_read(int, void *, unsigned);
 static int syscall_write(int, const void *, unsigned);
 static void syscall_seek(int, unsigned);
 static unsigned syscall_tell(int);
+#ifdef VM
+static mapid_t syscall_mmap(int, void *);
+#endif
 
 /* Registers the system call interrupt handler. */
 void syscall_init(void)
@@ -50,6 +57,9 @@ syscall_handler(struct intr_frame *f)
     check_vaddr(esp);
     check_vaddr(esp + sizeof(uintptr_t) - 1);
     syscall_num = *(int *)esp;
+#ifdef VM
+    thread_set_esp(esp);
+#endif
 
     switch (syscall_num)
     {
@@ -202,6 +212,32 @@ syscall_handler(struct intr_frame *f)
         syscall_close(fd);
         break;
     }
+#ifdef VM
+    case SYS_MMAP:
+    {
+        int fd;
+        void *addr;
+
+        check_vaddr(esp + sizeof(uintptr_t));
+        check_vaddr(esp + 3 * sizeof(uintptr_t) - 1);
+        fd = *(int *)(esp + sizeof(uintptr_t));
+        addr = *(void **)(esp + 2 * sizeof(uintptr_t));
+
+        f->eax = (uint32_t)syscall_mmap(fd, addr);
+        break;
+    }
+    case SYS_MUNMAP:
+    {
+        mapid_t mapid;
+
+        check_vaddr(esp + sizeof(uintptr_t));
+        check_vaddr(esp + 2 * sizeof(uintptr_t) - 1);
+        mapid = *(int *)(esp + sizeof(uintptr_t));
+
+        syscall_munmap(mapid);
+        break;
+    }
+#endif
     default:
         syscall_exit(-1);
     }
@@ -212,6 +248,13 @@ syscall_handler(struct intr_frame *f)
 static void
 check_vaddr(const void *vaddr)
 {
+#ifdef VM
+    if (!vaddr || !is_user_vaddr(vaddr))
+        syscall_exit(-1);
+
+    return;
+#endif
+
     if (!vaddr || !is_user_vaddr(vaddr) ||
         !pagedir_get_page(thread_get_pagedir(), vaddr))
         syscall_exit(-1);
@@ -449,3 +492,100 @@ void syscall_close(int fd)
     palloc_free_page(fde);
     lock_release(&filesys_lock);
 }
+
+#ifdef VM
+
+/* Handles mmap() system call. */
+static mapid_t syscall_mmap(int fd, void *addr)
+{
+    struct hash *spt;
+    struct file_descriptor_entry *fde;
+    struct mmap_descriptor_entry *mde;
+    struct file *file;
+    off_t size;
+    off_t ofs;
+    uint32_t read_bytes, zero_bytes;
+
+    if (is_kernel_vaddr(addr))
+        syscall_exit(-1);
+
+    if (!addr || pg_ofs(addr))
+        return MAP_FAILED;
+
+    fde = process_get_fde(fd);
+    if (fd <= 1 || !fde)
+        return MAP_FAILED;
+
+    lock_acquire(&filesys_lock);
+
+    file = file_reopen(fde->file);
+    if (!file)
+        goto fail;
+
+    size = file_length(file);
+    if (size == 0)
+        goto fail;
+
+    lock_release(&filesys_lock);
+
+    spt = thread_get_spt();
+    for (ofs = 0; ofs < size; ofs += PGSIZE)
+        if (page_lookup(spt, addr + ofs))
+            return MAP_FAILED;
+
+    for (ofs = 0; ofs < size; ofs += PGSIZE)
+    {
+        void *upage = addr + ofs;
+        uint32_t read_bytes = size - ofs >= PGSIZE ? PGSIZE : size - ofs;
+        uint32_t zero_bytes = PGSIZE - read_bytes;
+
+        page_install_file(spt, upage, file, ofs, read_bytes, zero_bytes, true);
+    }
+
+    mde = (struct mmap_descriptor_entry *)malloc(sizeof *mde);
+
+    mde->mapid = thread_get_next_mapid();
+    mde->file = file;
+    mde->size = size;
+    mde->upage = addr;
+    list_push_back(thread_get_mdt(), &mde->mdtelem);
+
+    return mde->mapid;
+
+fail:
+    lock_release(&filesys_lock);
+    return MAP_FAILED;
+}
+
+/* Handles munmap() system call. */
+void syscall_munmap(mapid_t mapid)
+{
+    struct hash *spt;
+    struct mmap_descriptor_entry *mde;
+    off_t size, ofs;
+    uint32_t *pd;
+
+    mde = process_get_mde(mapid);
+    if (!mde)
+        return;
+
+    lock_acquire(&filesys_lock);
+
+    size = mde->size;
+    spt = thread_get_spt();
+    pd = thread_get_pagedir();
+    for (ofs = 0; ofs < size; ofs += PGSIZE)
+    {
+        bool is_dirty = pagedir_is_dirty(pd, mde->upage + ofs);
+
+        page_delete(spt, mde->upage + ofs, is_dirty);
+    }
+
+    file_close(mde->file);
+    list_remove(&mde->mdtelem);
+    free(mde);
+
+    lock_release(&filesys_lock);
+}
+
+#endif

@@ -18,6 +18,15 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#ifdef VM
+#include "vm/frame.h"
+#include "vm/page.h"
+#endif
+
+#ifndef VM
+#define frame_allocate(f, u) palloc_get_page(f)
+#define frame_free(k) palloc_free_page(k)
+#endif
 
 static thread_func start_process NO_RETURN;
 static bool load(const char *cmdline, void (**eip)(void), void **esp);
@@ -94,6 +103,11 @@ start_process(void *pcb_)
     /* Set the current process's pcb to PCB. */
     thread_set_pcb(pcb);
 
+    /* Initialize the current process's spt. */
+#ifdef VM
+    page_spt_init(thread_get_spt());
+#endif
+
     /* Initialize interrupt frame. */
     memset(&if_, 0, sizeof if_);
     if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -158,27 +172,46 @@ void process_exit(void)
     struct thread *cur = thread_current();
     struct process *pcb = thread_get_pcb();
     struct list *children = thread_get_children();
+    struct list *locks = thread_get_locks();
     struct list_elem *e;
     struct lock *filesys_lock = syscall_get_filesys_lock();
     uint32_t *pd;
     int max_fd = thread_get_next_fd(), i;
+#ifdef VM
+    mapid_t max_mapid = thread_get_next_mapid(), j;
+#endif
 
     /* Set exit flag, remove all of the current process's exited children,
-     close all of its files, and notify its parent of its termination.
-     Finally, free its page if it is orphaned. */
+     and close all of its files. */
     pcb->is_exited = true;
     for (e = list_begin(children); e != list_end(children); e = list_next(e))
         process_remove_child(list_entry(e, struct process, childelem));
     for (i = 2; i < max_fd; i++)
         syscall_close(i);
-    sema_up(&pcb->exit_sema);
-    if (pcb && !pcb->parent)
-        palloc_free_page(pcb);
 
     /* Close the running file. */
     lock_acquire(filesys_lock);
     file_close(thread_get_running_file());
     lock_release(filesys_lock);
+
+    /* Release all of the current process's locks. */
+    for (e = list_begin(locks); e != list_end(locks); e = list_next(e))
+        lock_release(list_entry(e, struct lock, list_elem));
+
+#ifdef VM
+    /* Unmap all mmaped files. */
+    for (j = 0; j < max_mapid; j++)
+        syscall_munmap(j);
+
+    /* Destroy the current process's spt. */
+    page_spt_destroy(thread_get_spt());
+#endif
+
+    /* Notify the current process's parent of its termination and
+     free its page if it is orphaned. */
+    sema_up(&pcb->exit_sema);
+    if (pcb && !pcb->parent)
+        palloc_free_page(pcb);
 
     /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
@@ -194,6 +227,9 @@ void process_exit(void)
          that's been freed (and cleared). */
         thread_set_pagedir(NULL);
         pagedir_activate(NULL);
+#ifdef VM
+        frame_delete_all(thread_tid());
+#endif
         pagedir_destroy(pd);
     }
 }
@@ -260,6 +296,27 @@ struct file_descriptor_entry *process_get_fde(int fd)
 
     return NULL;
 }
+
+#ifdef VM
+
+/* Returns the current process's mmap descriptor entry with mapid MAPID. */
+struct mmap_descriptor_entry *process_get_mde(mapid_t mapid)
+{
+    struct list *mdt = thread_get_mdt();
+    struct list_elem *e;
+
+    for (e = list_begin(mdt); e != list_end(mdt); e = list_next(e))
+    {
+        struct mmap_descriptor_entry *mde = list_entry(e, struct mmap_descriptor_entry, mdtelem);
+
+        if (mde->mapid == mapid)
+            return mde;
+    }
+
+    return NULL;
+}
+
+#endif
 
 /* We load ELF binaries.  The following definitions are taken
    from the ELF specification, [ELF1], more-or-less verbatim.  */
@@ -511,10 +568,17 @@ static bool
 load_segment(struct file *file, off_t ofs, uint8_t *upage,
              uint32_t read_bytes, uint32_t zero_bytes, bool writable)
 {
+#ifdef VM
+    struct hash *spt;
+#endif
+
     ASSERT((read_bytes + zero_bytes) % PGSIZE == 0);
     ASSERT(pg_ofs(upage) == 0);
     ASSERT(ofs % PGSIZE == 0);
 
+#ifdef VM
+    spt = thread_get_spt();
+#endif
     file_seek(file, ofs);
     while (read_bytes > 0 || zero_bytes > 0)
     {
@@ -523,6 +587,10 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
          and zero the final PAGE_ZERO_BYTES bytes. */
         size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
         size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+#ifdef VM
+        goto advance;
+#endif
 
         /* Get a page of memory. */
         uint8_t *kpage = palloc_get_page(PAL_USER);
@@ -544,10 +612,19 @@ load_segment(struct file *file, off_t ofs, uint8_t *upage,
             return false;
         }
 
+#ifdef VM
+    advance:
+        /* Install supplemental page table entry. */
+        page_install_file(spt, upage, file, ofs, page_read_bytes, page_zero_bytes, writable);
+#endif
+
         /* Advance. */
         read_bytes -= page_read_bytes;
         zero_bytes -= page_zero_bytes;
         upage += PGSIZE;
+#ifdef VM
+        ofs += page_read_bytes;
+#endif
     }
     return true;
 }
@@ -560,14 +637,22 @@ setup_stack(void **esp)
     uint8_t *kpage;
     bool success = false;
 
-    kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+    kpage = frame_allocate(PAL_USER | PAL_ZERO, PHYS_BASE - PGSIZE);
     if (kpage != NULL)
     {
         success = install_page(((uint8_t *)PHYS_BASE) - PGSIZE, kpage, true);
         if (success)
+        {
+#ifdef VM
+            struct hash *spt = thread_get_spt();
+
+            page_install_frame(spt, PHYS_BASE - PGSIZE, kpage);
+            frame_unpin(kpage);
+#endif
             *esp = PHYS_BASE;
+        }
         else
-            palloc_free_page(kpage);
+            frame_free(kpage);
     }
     return success;
 }
