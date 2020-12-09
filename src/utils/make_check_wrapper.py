@@ -20,7 +20,8 @@ for i in range(num_iter):
     with open(file_name) as f:
         print('************** Result ' + str(i + 1).zfill(num_digit) + ' **************')
         lines = f.readlines()
-        lines = lines[-(num_test+1):-2]
+        print(lines[-2], end='')
+        lines = lines[-(num_test+2):-3]
         for line in lines:
             words = line.split()
             if words[0] == 'FAIL':

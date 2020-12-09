@@ -3,7 +3,7 @@
 # check number of arguments
 if [ ${#} -ne 2 ] ; then
     echo "Invalid number of arguments"
-    echo "Usage: make_check_wrapper.sh [project_num] [iteration_num]"
+    echo "Usage: make_check_wrapper.sh [project_num] [num_iteration]"
     exit -1
 fi
 
